@@ -141,21 +141,39 @@ def rebuild_all_trade_groups():
                 bucket['total_sell_qty'] += qty
                 bucket['sell_notional'] += qty * price
 
-            open_qty = matcher.get_open_qty()
-            bucket['open_qty'] = open_qty
-            bucket['avg_open_cost'] = matcher.get_avg_open_cost()
-            bucket['lot_snapshots'] = [dict(item) for item in matcher.snapshot_open_lots()]
+        # Determine each day's remaining lots from final FIFO state.
+        # This prevents earlier days from being stuck as "open/partial" after a later close.
+        remaining_by_day = defaultdict(list)
+        for snapshot in matcher.snapshot_open_lots():
+            opened_at = snapshot.get('opened_at')
+            opened_day = opened_at.date() if opened_at is not None else None
+            if opened_day is None:
+                continue
+            remaining_by_day[opened_day].append(snapshot)
 
-            if open_qty > ZERO:
+        symbol_bucket_keys = [key for key in buckets.keys() if key[0] == symbol]
+        for bucket_symbol, bucket_trade_day in symbol_bucket_keys:
+            bucket = buckets[(bucket_symbol, bucket_trade_day)]
+            day_snapshots = remaining_by_day.get(bucket_trade_day, [])
+
+            day_open_qty = sum((snapshot['open_qty'] for snapshot in day_snapshots), ZERO)
+            day_abs_qty = sum((abs(snapshot['remaining_qty']) for snapshot in day_snapshots), ZERO)
+            day_notional = sum((abs(snapshot['remaining_qty']) * snapshot['open_price'] for snapshot in day_snapshots), ZERO)
+
+            bucket['open_qty'] = day_open_qty
+            bucket['avg_open_cost'] = (day_notional / day_abs_qty) if day_abs_qty > ZERO else None
+            bucket['lot_snapshots'] = [dict(item) for item in day_snapshots]
+
+            if day_open_qty > ZERO:
                 bucket['direction'] = 'LONG'
-            elif open_qty < ZERO:
+            elif day_open_qty < ZERO:
                 bucket['direction'] = 'SHORT'
             else:
                 bucket['direction'] = None
 
-            if open_qty == ZERO:
-                bucket['status'] = 'closed'
-                bucket['closed_at'] = fill.executed_at
+            if day_open_qty == ZERO:
+                bucket['status'] = 'closed' if (bucket['had_buy'] and bucket['had_sell']) else 'open'
+                bucket['closed_at'] = bucket['last_fill_at'] if bucket['status'] == 'closed' else None
             elif bucket['had_buy'] and bucket['had_sell']:
                 bucket['status'] = 'partial'
                 bucket['closed_at'] = None

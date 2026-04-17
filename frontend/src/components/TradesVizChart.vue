@@ -31,7 +31,12 @@
     <div v-if="!categories.length || !normalizedSeries.length" class="empty-row">No chart data.</div>
 
     <div v-else ref="wrapRef" class="tv-chart-wrap" :style="chartWrapStyle">
-      <svg :viewBox="`0 0 ${svgWidth} ${svgHeight}`" class="tv-chart-svg" preserveAspectRatio="none">
+      <svg
+        :viewBox="`0 0 ${svgWidth} ${svgHeight}`"
+        class="tv-chart-svg"
+        preserveAspectRatio="none"
+        :style="{ width: `${svgWidth}px`, minWidth: `${svgWidth}px` }"
+      >
         <g>
           <line
             v-for="tick in yTicks"
@@ -155,7 +160,12 @@
         </div>
 
         <div ref="modalWrapRef" class="tv-chart-wrap tv-chart-wrap-modal" :style="modalChartWrapStyle">
-          <svg :viewBox="`0 0 ${modalSvgWidth} ${modalSvgHeight}`" class="tv-chart-svg" preserveAspectRatio="none">
+          <svg
+            :viewBox="`0 0 ${modalSvgWidth} ${modalSvgHeight}`"
+            class="tv-chart-svg"
+            preserveAspectRatio="none"
+            :style="{ width: `${modalSvgWidth}px`, minWidth: `${modalSvgWidth}px` }"
+          >
             <g>
               <line
                 v-for="tick in modalYTicks"
@@ -289,14 +299,36 @@ const padRight = 18
 const padTop = 18
 const padBottom = 38
 
-const svgWidth = computed(() => Math.max(width.value, 320))
 const svgHeight = computed(() => props.height)
+const modalSvgHeight = computed(() => 420)
+const normalizedSeries = computed(() => props.series.map((s, idx) => ({
+  name: s.name || `Series ${idx + 1}`,
+  color: s.color || ['#22c55e', '#ef4444', '#2563eb', '#f59e0b'][idx % 4],
+  data: (s.data || []).map(v => Number(v || 0)),
+})))
+
+const minPixelsPerCategory = computed(() => {
+  const seriesCount = Math.max(normalizedSeries.value.length, 1)
+  if (mode.value === 'bar') return Math.max(22, 12 * seriesCount + 10)
+  return 26
+})
+
+const minChartPixelWidth = computed(() => {
+  const categoryCount = Math.max(props.categories.length, 1)
+  return padLeft + padRight + (categoryCount * minPixelsPerCategory.value)
+})
+
+const minModalChartPixelWidth = computed(() => {
+  const categoryCount = Math.max(props.categories.length, 1)
+  return padLeft + padRight + (categoryCount * (minPixelsPerCategory.value + 6))
+})
+
+const svgWidth = computed(() => Math.max(width.value, 320, minChartPixelWidth.value))
 const innerWidth = computed(() => svgWidth.value - padLeft - padRight)
 const innerHeight = computed(() => svgHeight.value - padTop - padBottom)
 const chartBottom = computed(() => svgHeight.value - padBottom)
 
-const modalSvgWidth = computed(() => Math.max(modalWidth.value, 820))
-const modalSvgHeight = computed(() => 420)
+const modalSvgWidth = computed(() => Math.max(modalWidth.value, 820, minModalChartPixelWidth.value))
 const modalInnerWidth = computed(() => modalSvgWidth.value - padLeft - padRight)
 const modalInnerHeight = computed(() => modalSvgHeight.value - padTop - padBottom)
 const modalChartBottom = computed(() => modalSvgHeight.value - padBottom)
@@ -304,18 +336,16 @@ const modalChartBottom = computed(() => modalSvgHeight.value - padBottom)
 const chartWrapStyle = computed(() => ({
   height: `${svgHeight.value}px`,
   minHeight: `${svgHeight.value}px`,
+  overflowX: svgWidth.value > width.value ? 'auto' : 'hidden',
+  overflowY: 'hidden',
 }))
 
 const modalChartWrapStyle = computed(() => ({
   height: `${modalSvgHeight.value}px`,
   minHeight: `${modalSvgHeight.value}px`,
+  overflowX: modalSvgWidth.value > modalWidth.value ? 'auto' : 'hidden',
+  overflowY: 'hidden',
 }))
-
-const normalizedSeries = computed(() => props.series.map((s, idx) => ({
-  name: s.name || `Series ${idx + 1}`,
-  color: s.color || ['#22c55e', '#ef4444', '#2563eb', '#f59e0b'][idx % 4],
-  data: (s.data || []).map(v => Number(v || 0)),
-})))
 
 const allValues = computed(() => normalizedSeries.value.flatMap(s => s.data))
 const minValue = computed(() => Math.min(0, ...allValues.value, 0))
