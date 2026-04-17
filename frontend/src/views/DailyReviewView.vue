@@ -90,6 +90,7 @@
             </div>
             <div class="journal-inline-actions">
               <button class="secondary small-btn" @click="editReview(item)">Edit</button>
+              <button class="secondary small-btn" @click="removeReview(item.id)">Delete</button>
               <router-link v-if="item.related_trade_group_display" class="inline-link" :to="`/trades/${item.related_trade_group_display.id}`">Open linked trade</router-link>
             </div>
             <div v-if="item.images?.length" class="image-grid compact-image-grid">
@@ -108,7 +109,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { createDailyReview, updateDailyReview, fetchDailyReviews, fetchDailyReviewTradeOptions, uploadDailyReviewImages } from '../api/journal'
+import { createDailyReview, updateDailyReview, deleteDailyReview, fetchDailyReviews, fetchDailyReviewTradeOptions, uploadDailyReviewImages } from '../api/journal'
 import PaginationControls from '../components/PaginationControls.vue'
 
 const JOURNAL_EXPANDED_KEY = 'journal-expanded-v100'
@@ -189,6 +190,13 @@ function cancelEdit() {
   editingId.value = null
   form.value = freshForm()
   loadTradeOptions()
+}
+
+async function removeReview(id) {
+  if (!window.confirm('Delete this journal entry?')) return
+  await deleteDailyReview(id)
+  if (editingId.value === id) cancelEdit()
+  await loadReviews(page.value)
 }
 async function submitReview() {
   loading.value = true
