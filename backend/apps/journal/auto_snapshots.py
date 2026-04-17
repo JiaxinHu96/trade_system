@@ -111,10 +111,12 @@ def ensure_trade_journal_snapshots(trade_dates):
     updated_count = 0
     groups = TradeGroup.objects.filter(trade_date__in=trade_dates).order_by('trade_date', 'symbol', 'id')
     for group in groups:
-        executions = list(
-            RawIBKRExecution.objects.filter(symbol=group.symbol, trade_date=group.trade_date)
-            .order_by('executed_at', 'id')
-        )
+        executions_qs = RawIBKRExecution.objects.filter(symbol=group.symbol)
+        if group.opened_at:
+            executions_qs = executions_qs.filter(executed_at__gte=group.opened_at)
+        if group.closed_at:
+            executions_qs = executions_qs.filter(executed_at__lte=group.closed_at)
+        executions = list(executions_qs.order_by('executed_at', 'id'))
         if not executions:
             continue
 

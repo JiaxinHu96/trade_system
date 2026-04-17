@@ -13,6 +13,12 @@ class IBKRSyncService:
     def __init__(self, client):
         self.client = client
 
+    @staticmethod
+    def _safe_decimal(value, default: str = '0') -> Decimal:
+        if value in (None, ''):
+            return Decimal(default)
+        return Decimal(str(value))
+
     def normalize_row(self, row: dict) -> dict:
         executed_at = parse_dt(row.get('executed_at'))
         side = (row.get('side') or '').upper()
@@ -29,10 +35,10 @@ class IBKRSyncService:
             'currency': row.get('currency'),
             'exchange': row.get('exchange'),
             'side': side,
-            'quantity': Decimal(str(row.get('quantity'))),
-            'price': Decimal(str(row.get('price'))),
-            'commission': Decimal(str(row.get('commission') or '0')),
-            'realized_pnl': Decimal(str(row.get('realized_pnl'))) if row.get('realized_pnl') not in (None, '') else None,
+            'quantity': self._safe_decimal(row.get('quantity')),
+            'price': self._safe_decimal(row.get('price')),
+            'commission': self._safe_decimal(row.get('commission')),
+            'realized_pnl': self._safe_decimal(row.get('realized_pnl')) if row.get('realized_pnl') not in (None, '') else None,
             'executed_at': executed_at,
             'trade_date': executed_at.date() if executed_at else None,
             "raw_payload": row.get("raw_payload", {})

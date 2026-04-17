@@ -73,7 +73,7 @@ def rebuild_all_trade_groups():
     if not fills:
         return
 
-    buckets = {}
+    lifecycle_buckets = []
     fills_by_position_key = defaultdict(list)
     for fill in fills:
         account = getattr(fill.raw_execution, 'account', None) if getattr(fill, 'raw_execution', None) else None
@@ -82,15 +82,12 @@ def rebuild_all_trade_groups():
 
     for (_, symbol, asset_class), key_fills in fills_by_position_key.items():
         matcher = DayFIFOSummary()
+        current_bucket = None
 
         for fill in key_fills:
-            trade_day = fill.trade_day or fill.executed_at.date()
-            bucket_key = (symbol, trade_day)
-            bucket = buckets.get(bucket_key)
-            if bucket is None:
-                bucket = {
+            if current_bucket is None:
+                current_bucket = {
                     'symbol': symbol,
-                    'trade_date': trade_day,
                     'asset_class': asset_class,
                     'total_buy_qty': ZERO,
                     'total_sell_qty': ZERO,
@@ -110,7 +107,6 @@ def rebuild_all_trade_groups():
                     'had_sell': False,
                     'lot_snapshots': [],
                 }
-                buckets[bucket_key] = bucket
 
             match_info = matcher.apply_fill(fill)
             raw_realized = None
@@ -127,44 +123,57 @@ def rebuild_all_trade_groups():
             signed_qty = _to_decimal(fill.signed_qty)
             commission = _to_decimal(fill.commission)
 
-            bucket['last_fill_at'] = fill.executed_at
-            bucket['commission_total'] += commission
-            bucket['realized_pnl'] += realized_delta
-            bucket['net_qty'] += signed_qty
+            current_bucket['last_fill_at'] = fill.executed_at
+            current_bucket['commission_total'] += commission
+            current_bucket['realized_pnl'] += realized_delta
+            current_bucket['net_qty'] += signed_qty
 
             if (fill.side or '').upper() == 'BUY':
-                bucket['had_buy'] = True
-                bucket['total_buy_qty'] += qty
-                bucket['buy_notional'] += qty * price
+                current_bucket['had_buy'] = True
+                current_bucket['total_buy_qty'] += qty
+                current_bucket['buy_notional'] += qty * price
             else:
-                bucket['had_sell'] = True
-                bucket['total_sell_qty'] += qty
-                bucket['sell_notional'] += qty * price
+                current_bucket['had_sell'] = True
+                current_bucket['total_sell_qty'] += qty
+                current_bucket['sell_notional'] += qty * price
 
             open_qty = matcher.get_open_qty()
-            bucket['open_qty'] = open_qty
-            bucket['avg_open_cost'] = matcher.get_avg_open_cost()
-            bucket['lot_snapshots'] = [dict(item) for item in matcher.snapshot_open_lots()]
+            current_bucket['open_qty'] = open_qty
+            current_bucket['avg_open_cost'] = matcher.get_avg_open_cost()
+            current_bucket['lot_snapshots'] = [dict(item) for item in matcher.snapshot_open_lots()]
 
             if open_qty > ZERO:
-                bucket['direction'] = 'LONG'
+                current_bucket['direction'] = 'LONG'
             elif open_qty < ZERO:
-                bucket['direction'] = 'SHORT'
+                current_bucket['direction'] = 'SHORT'
             else:
-                bucket['direction'] = None
+                current_bucket['direction'] = None
 
             if open_qty == ZERO:
-                bucket['status'] = 'closed'
-                bucket['closed_at'] = fill.executed_at
-            elif bucket['had_buy'] and bucket['had_sell']:
-                bucket['status'] = 'partial'
-                bucket['closed_at'] = None
+                current_bucket['status'] = 'closed'
+                current_bucket['closed_at'] = fill.executed_at
             else:
-                bucket['status'] = 'open'
-                bucket['closed_at'] = None
+                if current_bucket['had_buy'] and current_bucket['had_sell']:
+                    current_bucket['status'] = 'partial'
+                else:
+                    current_bucket['status'] = 'open'
+                current_bucket['closed_at'] = None
 
-    for bucket_key in sorted(buckets.keys(), key=lambda item: (item[1], item[0])):
-        bucket = buckets[bucket_key]
+            if current_bucket['status'] == 'closed':
+                lifecycle_buckets.append(current_bucket)
+                current_bucket = None
+
+        if current_bucket is not None:
+            lifecycle_buckets.append(current_bucket)
+
+    for bucket in sorted(
+        lifecycle_buckets,
+        key=lambda item: (
+            item['closed_at'].date() if item['closed_at'] else item['opened_at'].date(),
+            item['symbol'],
+            item['opened_at'],
+        ),
+    ):
         avg_buy_price = None
         if bucket['total_buy_qty'] > ZERO:
             avg_buy_price = bucket['buy_notional'] / bucket['total_buy_qty']
@@ -173,9 +182,11 @@ def rebuild_all_trade_groups():
         if bucket['total_sell_qty'] > ZERO:
             avg_sell_price = bucket['sell_notional'] / bucket['total_sell_qty']
 
+        group_trade_date = bucket['closed_at'].date() if bucket['closed_at'] else bucket['opened_at'].date()
+
         group = TradeGroup.objects.create(
             symbol=bucket['symbol'],
-            trade_date=bucket['trade_date'],
+            trade_date=group_trade_date,
             asset_class=bucket['asset_class'],
             direction=bucket['direction'],
             status=bucket['status'],
