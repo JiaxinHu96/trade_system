@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 from django.conf import settings
+from django.utils import timezone
 
 
 class IBKRClient:
@@ -50,12 +51,18 @@ class IBKRClient:
         raise TimeoutError("Timed out waiting for Flex statement.")
 
     def parse_reference_code(self, xml_text: str) -> str | None:
-        root = ET.fromstring(xml_text)
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError as exc:
+            raise ValueError(f"Invalid XML from IBKR Flex send request: {exc}") from exc
         elem = root.find(".//ReferenceCode")
         return elem.text if elem is not None else None
 
     def parse_flex_xml(self, xml_text: str) -> list[dict]:
-        root = ET.fromstring(xml_text)
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError as exc:
+            raise ValueError(f"Invalid XML from IBKR Flex statement: {exc}") from exc
         rows: list[dict] = []
 
         for trade in root.findall(".//Trades/Trade"):
@@ -105,7 +112,10 @@ class IBKRClient:
     def parse_ibkr_datetime(self, value: str) -> datetime:
         if not value:
             raise ValueError("Missing dateTime in Flex XML.")
-        return datetime.strptime(value, "%Y%m%d;%H%M%S")
+        parsed = datetime.strptime(value, "%Y%m%d;%H%M%S")
+        if timezone.is_naive(parsed):
+            parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+        return parsed
 
     def to_decimal(self, value) -> Decimal:
         if value in [None, ""]:

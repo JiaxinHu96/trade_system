@@ -30,12 +30,28 @@ class TradeGroupSerializer(serializers.ModelSerializer):
         model = TradeGroup
         fields = '__all__'
 
+    def _group_executions_queryset(self, obj):
+        qs = RawIBKRExecution.objects.filter(symbol=obj.symbol)
+        if obj.opened_at:
+            qs = qs.filter(executed_at__gte=obj.opened_at)
+        if obj.closed_at:
+            qs = qs.filter(executed_at__lte=obj.closed_at)
+        return qs.order_by('executed_at', 'id')
+
+    def _group_fills_queryset(self, obj):
+        qs = TradeFill.objects.filter(symbol=obj.symbol)
+        if obj.opened_at:
+            qs = qs.filter(executed_at__gte=obj.opened_at)
+        if obj.closed_at:
+            qs = qs.filter(executed_at__lte=obj.closed_at)
+        return qs.order_by('executed_at', 'id')
+
     def get_raw_executions(self, obj):
-        qs = RawIBKRExecution.objects.filter(symbol=obj.symbol, trade_date=obj.trade_date).order_by('executed_at', 'id')
+        qs = self._group_executions_queryset(obj)
         return RawIBKRExecutionSerializer(qs, many=True).data
 
     def get_fills(self, obj):
-        qs = TradeFill.objects.filter(symbol=obj.symbol, trade_day=obj.trade_date).order_by('executed_at', 'id')
+        qs = self._group_fills_queryset(obj)
         return TradeFillSerializer(qs, many=True).data
 
     def get_linked_daily_reviews(self, obj):
