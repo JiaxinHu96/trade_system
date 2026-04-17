@@ -3,6 +3,7 @@ from django.db import IntegrityError, transaction
 from apps.syncs.models import SyncJob
 from apps.trades.models import RawIBKRExecution
 from apps.trades.services import create_fill_from_raw, rebuild_trade_groups_for_dates
+from apps.journal.auto_snapshots import ensure_trade_journal_snapshots
 from decimal import Decimal
 
 from .normalizers import build_execution_dedupe_key, parse_dt
@@ -67,6 +68,7 @@ class IBKRSyncService:
                 sync_job.save(update_fields=['error_count', 'error_message', 'updated_at'])
 
         rebuild_trade_groups_for_dates(touched_trade_dates)
+        auto_snapshot_count = ensure_trade_journal_snapshots(touched_trade_dates)
 
         sync_job.inserted_count = inserted
         sync_job.duplicate_count = duplicate_count
@@ -79,4 +81,5 @@ class IBKRSyncService:
             'duplicate_count': duplicate_count,
             'error_count': sync_job.error_count,
             'touched_trade_dates': [str(x) for x in sorted(touched_trade_dates)],
+            'auto_snapshot_count': auto_snapshot_count,
         }

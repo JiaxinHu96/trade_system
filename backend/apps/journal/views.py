@@ -10,8 +10,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.trades.models import TradeGroup
-from .models import DailyReview
-from .serializers import DailyReviewSerializer
+from .models import DailyReview, TradeJournal
+from .serializers import DailyReviewSerializer, TradeJournalSerializer
 
 
 class DailyReviewViewSet(viewsets.ModelViewSet):
@@ -60,6 +60,29 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
             for item in trade_groups
         ]
         return Response(data)
+
+
+class TradeJournalViewSet(viewsets.ModelViewSet):
+    queryset = TradeJournal.objects.select_related('trade_group').all().order_by('-updated_at', '-id')
+    serializer_class = TradeJournalSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        trade_group_id = self.request.query_params.get('trade_group')
+        if trade_group_id:
+            qs = qs.filter(trade_group_id=trade_group_id)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        trade_group_id = request.data.get('trade_group')
+        if trade_group_id:
+            instance = TradeJournal.objects.filter(trade_group_id=trade_group_id).first()
+            if instance:
+                serializer = self.get_serializer(instance, data=request.data, partial=True)
+                serializer.is_valid(raise_exception=True)
+                self.perform_update(serializer)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+        return super().create(request, *args, **kwargs)
 
 
 class DailyReviewImageUploadAPIView(APIView):

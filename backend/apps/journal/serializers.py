@@ -77,6 +77,21 @@ class MistakeTagSerializer(serializers.ModelSerializer):
 
 
 class TradeJournalSerializer(serializers.ModelSerializer):
+    trade_group_display = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = TradeJournal
         fields = '__all__'
+
+    def get_trade_group_display(self, obj):
+        group = obj.trade_group
+        if not group:
+            return None
+        return {
+            'id': group.id,
+            'symbol': group.symbol,
+            'trade_date': group.trade_date,
+            'status': group.status,
+            'direction': group.direction,
+            'realized_pnl': group.realized_pnl,
+        }
