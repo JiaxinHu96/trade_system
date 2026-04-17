@@ -16,43 +16,5 @@ services:
       timeout: 5s
       retries: 20
 
-  backend:
-    build:
-      context: ./backend
-    container_name: trade-system-backend
-    env_file:
-      - ./backend/.env
-    environment:
-      DJANGO_DEBUG: "1"
-      DJANGO_SECRET_KEY: dev-secret-key
-      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
-      DB_ENGINE: postgres
-      POSTGRES_DB: trade_journal
-      POSTGRES_USER: trade_user
-      POSTGRES_PASSWORD: 123456
-      POSTGRES_HOST: db
-      POSTGRES_PORT: 5432
-    volumes:
-      - ./backend:/app
-      - backend_media:/app/media
-    depends_on:
-      db:
-        condition: service_healthy
-    ports:
-      - "8000:8000"
-    command: sh /app/entrypoint.sh
-
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_BASE_URL: /api
-    container_name: trade-system-frontend
-    depends_on:
-      - backend
-    ports:
-      - "5173:80"
-
 volumes:
   postgres_data:
-  backend_media:
