@@ -12,9 +12,9 @@
       <div class="card journal-form-card">
         <div class="section-title">{{ editingId ? 'Edit Journal Entry' : 'New Journal Entry' }}</div>
         <div class="journal-form-grid">
-          <label>
+          <label class="journal-date-field">
             <span>Date</span>
-            <input v-model="form.review_date" type="date" @change="loadTradeOptions" />
+            <input ref="dateInputRef" v-model="form.review_date" type="date" @change="loadTradeOptions" @click="openDatePicker" @focus="openDatePicker" />
           </label>
         </div>
 
@@ -122,6 +122,7 @@ const totalCount = ref(0)
 const listDateFilter = ref('')
 const expandedReviewIds = ref([])
 const editingId = ref(null)
+const dateInputRef = ref(null)
 const freshForm = () => ({ review_date: new Date().toISOString().slice(0, 10), related_trade_group: null, image_urls: [], market_summary: '', emotions: '', lessons: '', next_day_plan: '' })
 const form = ref(freshForm())
 const savingLabel = computed(() => {
@@ -129,6 +130,11 @@ const savingLabel = computed(() => {
   if (uploading.value) return 'Uploading...'
   return editingId.value ? 'Update Journal' : 'Save Journal'
 })
+
+function openDatePicker() {
+  const dateInput = dateInputRef.value
+  if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
+}
 
 function restoreExpandedState() {
   try { expandedReviewIds.value = JSON.parse(localStorage.getItem(JOURNAL_EXPANDED_KEY) || '[]') } catch { expandedReviewIds.value = [] }

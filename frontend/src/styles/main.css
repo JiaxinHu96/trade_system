@@ -1378,6 +1378,18 @@ body {
   grid-template-columns: minmax(360px, 0.95fr) minmax(540px, 1.2fr);
   gap: 18px;
 }
+.journal-form-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px);
+  margin-bottom: 14px;
+}
+.journal-form-grid label {
+  display: grid;
+  gap: 8px;
+}
+.journal-date-field input {
+  max-width: 280px;
+}
 .journal-list-head {
   display: flex;
   justify-content: space-between;
@@ -1450,6 +1462,27 @@ body {
 .journal-inline-actions {
   margin: 8px 0 12px;
 }
+.journal-text-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+.journal-text-grid label {
+  display: grid;
+  gap: 8px;
+}
+.journal-text-grid label textarea {
+  min-height: 110px;
+}
+.helper-row {
+  gap: 14px;
+}
+.helper-row input[type="file"] {
+  flex: 1 1 auto;
+}
+.filter-action-row {
+  margin-top: 18px;
+}
 .compact-header-card {
   margin-bottom: 0;
 }
@@ -1457,6 +1490,12 @@ body {
   .tv-dashboard-chart-grid-triple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-grid { grid-template-columns: 1fr; }
   .journal-layout-wide { grid-template-columns: 1fr; }
+  .journal-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .journal-date-field input {
+    max-width: 100%;
+  }
 }
 @media (max-width: 860px) {
   .tv-nav { flex-direction: column; align-items: flex-start; }
@@ -1465,6 +1504,7 @@ body {
   .tv-dashboard-chart-grid-triple { grid-template-columns: 1fr; }
   .tv-stats-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .settings-status-grid { grid-template-columns: 1fr; }
+  .journal-text-grid { grid-template-columns: 1fr; }
 }
 
 /* v10.1 backend-persisted tabs + journal edit */
