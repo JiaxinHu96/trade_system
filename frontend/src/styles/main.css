@@ -1391,14 +1391,12 @@ body {
   max-width: 280px;
 }
 .journal-list-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
+  gap: 10px;
   margin-bottom: 12px;
-  gap: 12px;
 }
 .journal-list-filters {
-  min-width: 220px;
+  min-width: 0;
 }
 .journal-linked-trade-block {
   border: 1px solid #e9eef7;
@@ -2029,8 +2027,14 @@ body {
 
 /* journal + strategy settings enhancements */
 .timeline-filters {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display: grid;
+  grid-template-columns: 140px 140px minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: center;
   width: 100%;
+  gap: 8px;
+}
+.timeline-filters .small-btn {
+  white-space: nowrap;
 }
 .tv-journal-card {
   border: 1px solid var(--tv-line);
