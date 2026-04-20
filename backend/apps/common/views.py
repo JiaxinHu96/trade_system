@@ -1,4 +1,5 @@
 from django.db.models import Max
+from django.db.utils import OperationalError, ProgrammingError
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -74,3 +75,16 @@ class DashboardPreferenceAPIView(APIView):
 class StrategyOptionViewSet(viewsets.ModelViewSet):
     serializer_class = StrategyOptionSerializer
     queryset = StrategyOption.objects.all().order_by("sort_order", "name", "id")
+
+    def handle_exception(self, exc):
+        if isinstance(exc, (ProgrammingError, OperationalError)):
+            return Response(
+                {
+                    "detail": (
+                        "StrategyOption table is unavailable. "
+                        "Please run database migrations (python manage.py migrate)."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return super().handle_exception(exc)
