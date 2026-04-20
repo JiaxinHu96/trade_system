@@ -3,6 +3,7 @@ import uuid
 
 from django.conf import settings
 from django.db import connection
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -52,13 +53,6 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
         if not payload.get('review_date'):
             payload['review_date'] = timezone.localdate().isoformat()
 
-        instance = DailyReview.objects.filter(review_date=payload['review_date']).first()
-        if instance:
-            serializer = self.get_serializer(instance, data=payload, partial=True)
-            serializer.is_valid(raise_exception=True)
-            self.perform_update(serializer)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-
         serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
@@ -69,13 +63,23 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
         review_date = request.query_params.get('date')
         if not review_date:
             return Response([])
-        trade_groups = TradeGroup.objects.filter(trade_date=review_date).order_by('symbol', 'id')
+        trade_groups = (
+            TradeGroup.objects.filter(
+                Q(trade_date=review_date)
+                | Q(opened_at__date=review_date)
+                | Q(closed_at__date=review_date)
+            )
+            .filter(status='closed')
+            .order_by('opened_at', 'id')
+        )
         data = [
             {
                 'id': item.id,
-                'label': f"{item.trade_date} | {item.symbol} | {item.status.upper()} | PnL {item.realized_pnl}",
+                'label': f"{item.symbol} | {item.opened_at} -> {item.closed_at} | PnL {item.realized_pnl}",
                 'symbol': item.symbol,
                 'trade_date': item.trade_date,
+                'opened_at': item.opened_at,
+                'closed_at': item.closed_at,
                 'status': item.status,
                 'realized_pnl': item.realized_pnl,
             }
