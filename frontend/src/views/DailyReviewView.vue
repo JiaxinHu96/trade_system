@@ -8,8 +8,17 @@
       </div>
     </div>
 
+    <div class="card tv-tabbed-panel">
+      <div class="tv-panel-tabs">
+        <button :class="['tv-subtab', { active: journalTab === 'entry' }]" @click="journalTab = 'entry'">Journal Entry</button>
+        <button :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="journalTab = 'timeline'">Journal Timeline</button>
+      </div>
+    </div>
+
     <div class="journal-layout journal-layout-wide">
       <div class="card journal-form-card">
+        <div v-if="journalTab !== 'entry'" class="muted-copy">切换到 “Journal Entry” 来填写当日复盘。</div>
+        <template v-else>
         <div class="section-title">{{ editingId ? 'Edit Journal Entry' : 'New Journal Entry' }}</div>
         <div class="journal-form-grid">
           <label class="journal-date-field">
@@ -53,8 +62,12 @@
         </div>
 
         <div class="journal-text-grid">
+          <label><span>Strategy</span><input v-model.trim="form.strategy" type="text" placeholder="如：开盘突破 / VWAP 回踩" /></label>
           <label><span>Market Summary</span><textarea v-model="form.market_summary" rows="4"></textarea></label>
           <label><span>Emotions</span><textarea v-model="form.emotions" rows="4"></textarea></label>
+          <label><span>Thesis</span><textarea v-model="form.thesis" rows="4"></textarea></label>
+          <label><span>Entry Logic</span><textarea v-model="form.entry_logic" rows="4"></textarea></label>
+          <label><span>Exit Logic</span><textarea v-model="form.exit_logic" rows="4"></textarea></label>
           <label><span>Lessons</span><textarea v-model="form.lessons" rows="4"></textarea></label>
           <label><span>Next Day Plan</span><textarea v-model="form.next_day_plan" rows="4"></textarea></label>
         </div>
@@ -62,12 +75,19 @@
           <button @click="submitReview" :disabled="loading || uploading">{{ savingLabel }}</button>
           <button v-if="editingId" class="secondary" @click="cancelEdit">Cancel</button>
         </div>
+        </template>
       </div>
 
       <div class="card journal-list-card">
+        <div v-if="journalTab !== 'timeline'" class="muted-copy">切换到 “Journal Timeline” 查看与筛选历史日记。</div>
+        <template v-else>
         <div class="journal-list-head">
           <div class="section-title">Journal Timeline</div>
-          <div class="journal-list-filters"><input v-model="listDateFilter" type="date" @change="loadReviews(1)" /></div>
+          <div class="journal-list-filters">
+            <input v-model="listDateFilter" type="date" @change="loadReviews(1)" />
+            <input v-model.trim="listStrategyFilter" type="text" placeholder="Filter by strategy" @keyup.enter="loadReviews(1)" />
+            <button class="secondary small-btn" @click="loadReviews(1)">Search</button>
+          </div>
         </div>
 
         <div v-for="item in reviews" :key="item.id" class="journal-entry-card accordion">
@@ -83,8 +103,12 @@
 
           <div v-if="expandedReviewIds.includes(item.id)" class="accordion-body">
             <div class="journal-entry-grid">
+              <div><strong>Strategy</strong><p>{{ item.strategy || '-' }}</p></div>
               <div><strong>Market</strong><p>{{ item.market_summary || '-' }}</p></div>
               <div><strong>Emotions</strong><p>{{ item.emotions || '-' }}</p></div>
+              <div><strong>Thesis</strong><p>{{ item.thesis || '-' }}</p></div>
+              <div><strong>Entry Logic</strong><p>{{ item.entry_logic || '-' }}</p></div>
+              <div><strong>Exit Logic</strong><p>{{ item.exit_logic || '-' }}</p></div>
               <div><strong>Lessons</strong><p>{{ item.lessons || '-' }}</p></div>
               <div><strong>Next Day</strong><p>{{ item.next_day_plan || '-' }}</p></div>
             </div>
@@ -102,6 +126,7 @@
         </div>
         <div v-if="!reviews.length" class="empty-row">No journal entries yet.</div>
         <PaginationControls :count="totalCount" :current-page="page" :page-size="20" @change="loadReviews" />
+        </template>
       </div>
     </div>
   </div>
@@ -120,10 +145,24 @@ const tradeOptions = ref([])
 const page = ref(1)
 const totalCount = ref(0)
 const listDateFilter = ref('')
+const listStrategyFilter = ref('')
 const expandedReviewIds = ref([])
 const editingId = ref(null)
+const journalTab = ref('entry')
 const dateInputRef = ref(null)
-const freshForm = () => ({ review_date: new Date().toISOString().slice(0, 10), related_trade_group: null, image_urls: [], market_summary: '', emotions: '', lessons: '', next_day_plan: '' })
+const freshForm = () => ({
+  review_date: new Date().toISOString().slice(0, 10),
+  related_trade_group: null,
+  image_urls: [],
+  strategy: '',
+  market_summary: '',
+  emotions: '',
+  thesis: '',
+  entry_logic: '',
+  exit_logic: '',
+  lessons: '',
+  next_day_plan: '',
+})
 const form = ref(freshForm())
 const savingLabel = computed(() => {
   if (loading.value) return editingId.value ? 'Updating...' : 'Saving...'
@@ -145,6 +184,7 @@ async function loadReviews(nextPage = 1) {
   page.value = nextPage
   const params = { page: page.value }
   if (listDateFilter.value) params.date = listDateFilter.value
+  if (listStrategyFilter.value) params.strategy = listStrategyFilter.value
   const res = await fetchDailyReviews(params)
   reviews.value = res.data.results || []
   totalCount.value = res.data.count || reviews.value.length
@@ -186,9 +226,14 @@ function editReview(item) {
     image_urls: (item.images || []).map(img => img.image_url),
     market_summary: item.market_summary || '',
     emotions: item.emotions || '',
+    strategy: item.strategy || '',
+    thesis: item.thesis || '',
+    entry_logic: item.entry_logic || '',
+    exit_logic: item.exit_logic || '',
     lessons: item.lessons || '',
     next_day_plan: item.next_day_plan || '',
   }
+  journalTab.value = 'entry'
   loadTradeOptions()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
