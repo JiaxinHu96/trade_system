@@ -1,5 +1,7 @@
+from django.core.management import call_command
 from django.db.models import Max
 from django.db.utils import OperationalError, ProgrammingError
+from rest_framework.exceptions import APIException
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -24,6 +26,12 @@ DEFAULT_PANEL_ORDER = [
     "symbolPnl",
     "miniAnalytics",
 ]
+
+
+class ServiceUnavailable(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "Service unavailable."
+    default_code = "service_unavailable"
 
 
 def ensure_default_tab():
@@ -75,6 +83,28 @@ class DashboardPreferenceAPIView(APIView):
 class StrategyOptionViewSet(viewsets.ModelViewSet):
     serializer_class = StrategyOptionSerializer
     queryset = StrategyOption.objects.all().order_by("sort_order", "name", "id")
+
+    def _ensure_strategy_option_table(self):
+        try:
+            StrategyOption.objects.exists()
+            return True
+        except (ProgrammingError, OperationalError) as exc:
+            if "common_strategyoption" not in str(exc):
+                return False
+            try:
+                call_command("migrate", "common", interactive=False, verbosity=0)
+                StrategyOption.objects.exists()
+                return True
+            except Exception:
+                return False
+
+    def initial(self, request, *args, **kwargs):
+        if not self._ensure_strategy_option_table():
+            raise ServiceUnavailable(
+                "StrategyOption table is unavailable and auto-migration failed. "
+                "Please run `python manage.py migrate`."
+            )
+        return super().initial(request, *args, **kwargs)
 
     def handle_exception(self, exc):
         if isinstance(exc, (ProgrammingError, OperationalError)):
