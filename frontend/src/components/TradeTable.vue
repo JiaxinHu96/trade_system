@@ -8,11 +8,9 @@
         <th>Hold</th>
         <th>Symbol</th>
         <th>Status</th>
-        <th>Direction</th>
         <th>Buy Qty</th>
         <th>Sell Qty</th>
         <th>Open Qty</th>
-        <th>Avg Open Cost</th>
         <th>Realized PnL</th>
         <th>Commission</th>
         <th>Action</th>
@@ -26,11 +24,9 @@
         <td>{{ formatHold(row.opened_at, row.closed_at) }}</td>
         <td>{{ row.symbol }}</td>
         <td><span :class="['badge', row.status]">{{ row.status }}</span></td>
-        <td>{{ row.direction || '-' }}</td>
         <td>{{ formatNumber(row.total_buy_qty) }}</td>
         <td>{{ formatNumber(row.total_sell_qty) }}</td>
         <td>{{ formatNumber(row.open_qty) }}</td>
-        <td>{{ row.avg_open_cost ? formatNumber(row.avg_open_cost) : '-' }}</td>
         <td>{{ formatNumber(row.realized_pnl) }}</td>
         <td>{{ formatNumber(row.commission_total) }}</td>
         <td>
@@ -43,7 +39,7 @@
         </td>
       </tr>
       <tr v-if="!rows.length">
-        <td colspan="14" class="empty-row">No trades found.</td>
+        <td colspan="12" class="empty-row">No trades found.</td>
       </tr>
     </tbody>
   </table>
@@ -57,7 +53,7 @@ function formatDateTime(value) {
   if (!value) return '-'
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return '-'
-  return dt.toLocaleString('sv-SE', { hour12: false }).replace(' ', ' ')
+  return dt.toLocaleString('sv-SE', { hour12: false })
 }
 
 function formatHold(openedAt, closedAt) {
