@@ -77,15 +77,22 @@
         </div>
 
         <div class="strategy-list">
+          <div v-if="strategyOptions.length" class="strategy-row strategy-row-head">
+            <span>Strategy Name</span>
+            <span>Order</span>
+            <span>Status</span>
+            <span></span>
+            <span></span>
+          </div>
           <div v-for="item in strategyOptions" :key="item.id" class="strategy-row">
-            <input v-model.trim="item.name" type="text" />
+            <input v-model.trim="item.name" type="text" placeholder="Strategy name" />
             <input v-model.number="item.sort_order" type="number" min="0" />
             <label class="strategy-toggle">
               <input v-model="item.is_active" type="checkbox" />
               Active
             </label>
-            <button class="secondary" @click="saveStrategy(item)">Save</button>
-            <button class="secondary" @click="removeStrategy(item.id)">Delete</button>
+            <button class="secondary small-btn" @click="saveStrategy(item)">Save</button>
+            <button class="secondary small-btn" @click="removeStrategy(item.id)">Delete</button>
           </div>
           <div v-if="!strategyOptions.length" class="muted-copy">No strategies configured yet.</div>
         </div>
