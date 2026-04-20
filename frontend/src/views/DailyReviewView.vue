@@ -90,8 +90,8 @@
         <div class="journal-list-head">
           <div class="section-title">Journal Timeline</div>
           <div class="journal-list-filters timeline-filters">
-            <input v-model="listDateFromFilter" type="date" @change="loadReviews(1)" />
-            <input v-model="listDateToFilter" type="date" @change="loadReviews(1)" />
+            <input ref="listDateFromInputRef" v-model="listDateFromFilter" type="date" @change="loadReviews(1)" @click="openListDatePicker('from')" @focus="openListDatePicker('from')" />
+            <input ref="listDateToInputRef" v-model="listDateToFilter" type="date" @change="loadReviews(1)" @click="openListDatePicker('to')" @focus="openListDatePicker('to')" />
             <select v-model="listStrategySelect" @change="syncStrategyKeywordFromSelect">
               <option value="">All strategies</option>
               <option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option>
@@ -165,6 +165,8 @@ const expandedReviewIds = ref([])
 const editingId = ref(null)
 const journalTab = ref('entry')
 const dateInputRef = ref(null)
+const listDateFromInputRef = ref(null)
+const listDateToInputRef = ref(null)
 const freshForm = () => ({
   review_date: new Date().toISOString().slice(0, 10),
   related_trade_group: null,
@@ -190,6 +192,10 @@ function openDatePicker() {
   const dateInput = dateInputRef.value
   if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
 }
+function openListDatePicker(type) {
+  const dateInput = type === 'from' ? listDateFromInputRef.value : listDateToInputRef.value
+  if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
+}
 
 function restoreExpandedState() {
   try { expandedReviewIds.value = JSON.parse(localStorage.getItem(JOURNAL_EXPANDED_KEY) || '[]') } catch { expandedReviewIds.value = [] }
@@ -208,8 +214,13 @@ async function loadReviews(nextPage = 1) {
 }
 
 async function loadStrategyOptions() {
-  const res = await fetchStrategyOptions()
-  strategyOptions.value = (res.data?.results || res.data || []).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+  try {
+    const res = await fetchStrategyOptions()
+    strategyOptions.value = (res.data?.results || res.data || []).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+  } catch (err) {
+    strategyOptions.value = []
+    console.warn('Failed to load strategy options:', err)
+  }
 }
 
 function syncStrategyKeywordFromSelect() {

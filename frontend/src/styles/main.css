@@ -1347,6 +1347,12 @@ body {
 }
 .settings-card {
   min-height: 250px;
+  min-width: 0;
+}
+@media (max-width: 1500px) {
+  .settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .settings-status-grid {
   display: grid;
@@ -1391,14 +1397,12 @@ body {
   max-width: 280px;
 }
 .journal-list-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
+  gap: 10px;
   margin-bottom: 12px;
-  gap: 12px;
 }
 .journal-list-filters {
-  min-width: 220px;
+  min-width: 0;
 }
 .journal-linked-trade-block {
   border: 1px solid #e9eef7;
@@ -2029,8 +2033,14 @@ body {
 
 /* journal + strategy settings enhancements */
 .timeline-filters {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display: grid;
+  grid-template-columns: 140px 140px minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: center;
   width: 100%;
+  gap: 8px;
+}
+.timeline-filters .small-btn {
+  white-space: nowrap;
 }
 .tv-journal-card {
   border: 1px solid var(--tv-line);
@@ -2078,24 +2088,75 @@ body {
 }
 .strategy-row {
   display: grid;
-  grid-template-columns: 1fr 120px 110px 80px 80px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "main actions"
+    "status actions";
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #e6ecf6;
+  border-radius: 12px;
+  padding: 10px;
+  background: #fbfdff;
+  overflow: hidden;
+}
+.strategy-row input {
+  min-width: 0;
+}
+.strategy-main-group {
+  grid-area: main;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
   gap: 8px;
   align-items: center;
 }
+.strategy-order-group {
+  display: grid;
+  gap: 4px;
+  color: var(--tv-muted);
+  font-size: 12px;
+}
+.strategy-order-group span {
+  line-height: 1;
+}
+.strategy-actions-fixed {
+  grid-area: actions;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-self: center;
+}
+.strategy-actions-fixed .small-btn {
+  min-width: 72px;
+}
 .strategy-toggle {
+  grid-area: status;
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--tv-muted);
   font-size: 13px;
+  white-space: nowrap;
 }
 .strategy-toggle input {
   width: auto;
 }
 @media (max-width: 900px) {
   .timeline-filters,
-  .strategy-row,
   .journal-entry-grid {
     grid-template-columns: 1fr;
+  }
+  .strategy-row {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "main"
+      "status"
+      "actions";
+  }
+  .strategy-main-group {
+    grid-template-columns: 1fr;
+  }
+  .strategy-actions-fixed {
+    justify-content: flex-start;
   }
 }
