@@ -83,7 +83,6 @@ class TradeGroup(models.Model):
 
     class Meta:
         ordering = ['-trade_date', '-id']
-        unique_together = ('symbol', 'trade_date')
 
 
 class TradeLotSnapshot(models.Model):
