@@ -824,18 +824,56 @@ function currentParams() {
   return params
 }
 
+function detailPagingParams(page) {
+  return {
+    ...currentParams(),
+    page,
+    page_size: detailPageSize,
+  }
+}
+
+async function fetchLatestRows(page) {
+  return fetchTradeGroups(detailPagingParams(page))
+}
+
+async function fetchClosedAnalyticsRows(page) {
+  return fetchClosedTradeAnalytics(detailPagingParams(page))
+}
+
 async function loadRows(nextPage = latestPage.value) {
   latestPage.value = nextPage
-  const groupsRes = await fetchTradeGroups({ ...currentParams(), page: latestPage.value })
-  rows.value = groupsRes.data.results || []
-  latestCount.value = groupsRes.data.count || rows.value.length
+  try {
+    const groupsRes = await fetchLatestRows(latestPage.value)
+    rows.value = groupsRes.data.results || []
+    latestCount.value = groupsRes.data.count || rows.value.length
+  } catch (err) {
+    if (err?.response?.status === 404 && latestPage.value > 1) {
+      latestPage.value = 1
+      const groupsRes = await fetchLatestRows(1)
+      rows.value = groupsRes.data.results || []
+      latestCount.value = groupsRes.data.count || rows.value.length
+      return
+    }
+    throw err
+  }
 }
 
 async function loadClosedRows(nextPage = closedPage.value) {
   closedPage.value = nextPage
-  const res = await fetchClosedTradeAnalytics({ ...currentParams(), page: closedPage.value })
-  closedRows.value = res.data.results || []
-  closedCount.value = res.data.count || closedRows.value.length
+  try {
+    const res = await fetchClosedAnalyticsRows(closedPage.value)
+    closedRows.value = res.data.results || []
+    closedCount.value = res.data.count || closedRows.value.length
+  } catch (err) {
+    if (err?.response?.status === 404 && closedPage.value > 1) {
+      closedPage.value = 1
+      const res = await fetchClosedAnalyticsRows(1)
+      closedRows.value = res.data.results || []
+      closedCount.value = res.data.count || closedRows.value.length
+      return
+    }
+    throw err
+  }
 }
 
 async function loadDashboard() {
@@ -885,8 +923,8 @@ async function loadData({ keepExisting = true } = {}) {
 
   const [dashboardRes, rowsRes, closedRes] = await Promise.allSettled([
     fetchTradeDashboard(currentParams()),
-    fetchTradeGroups({ ...currentParams(), page: latestPage.value }),
-    fetchClosedTradeAnalytics({ ...currentParams(), page: closedPage.value }),
+    fetchLatestRows(latestPage.value),
+    fetchClosedAnalyticsRows(closedPage.value),
   ])
 
   if (requestToken !== pendingRequestToken.value) return
