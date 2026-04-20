@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.db.models import Q
 from rest_framework.decorators import action
 from rest_framework.generics import ListAPIView
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
@@ -68,8 +69,13 @@ def _latest_groups_by_symbol(groups):
 
 
 class TradeGroupViewSet(ReadOnlyModelViewSet):
+    class DashboardPageNumberPagination(PageNumberPagination):
+        page_size_query_param = 'page_size'
+        max_page_size = 100
+
     serializer_class = TradeGroupSerializer
     queryset = TradeGroup.objects.all().order_by('-trade_date', '-id')
+    pagination_class = DashboardPageNumberPagination
 
     def _normalized_date_params(self):
         qp = self.request.query_params
