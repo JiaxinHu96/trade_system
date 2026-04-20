@@ -3,8 +3,8 @@ from rest_framework import status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import DashboardPreference, DashboardTab
-from .serializers import DashboardPreferenceSerializer, DashboardTabSerializer
+from .models import DashboardPreference, DashboardTab, StrategyOption
+from .serializers import DashboardPreferenceSerializer, DashboardTabSerializer, StrategyOptionSerializer
 
 DEFAULT_WIDGETS = [
     "overviewCards",
@@ -69,3 +69,8 @@ class DashboardPreferenceAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     patch = put
+
+
+class StrategyOptionViewSet(viewsets.ModelViewSet):
+    serializer_class = StrategyOptionSerializer
+    queryset = StrategyOption.objects.all().order_by("sort_order", "name", "id")

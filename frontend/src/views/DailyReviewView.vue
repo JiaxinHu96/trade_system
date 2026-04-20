@@ -62,7 +62,13 @@
         </div>
 
         <div class="journal-text-grid">
-          <label><span>Strategy</span><input v-model.trim="form.strategy" type="text" placeholder="如：开盘突破 / VWAP 回踩" /></label>
+          <label>
+            <span>Strategy</span>
+            <select v-model="form.strategy">
+              <option value="">Select strategy</option>
+              <option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option>
+            </select>
+          </label>
           <label><span>Market Summary</span><textarea v-model="form.market_summary" rows="4"></textarea></label>
           <label><span>Emotions</span><textarea v-model="form.emotions" rows="4"></textarea></label>
           <label><span>Thesis</span><textarea v-model="form.thesis" rows="4"></textarea></label>
@@ -83,14 +89,19 @@
         <template v-else>
         <div class="journal-list-head">
           <div class="section-title">Journal Timeline</div>
-          <div class="journal-list-filters">
-            <input v-model="listDateFilter" type="date" @change="loadReviews(1)" />
-            <input v-model.trim="listStrategyFilter" type="text" placeholder="Filter by strategy" @keyup.enter="loadReviews(1)" />
+          <div class="journal-list-filters timeline-filters">
+            <input v-model="listDateFromFilter" type="date" @change="loadReviews(1)" />
+            <input v-model="listDateToFilter" type="date" @change="loadReviews(1)" />
+            <select v-model="listStrategySelect" @change="syncStrategyKeywordFromSelect">
+              <option value="">All strategies</option>
+              <option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option>
+            </select>
+            <input v-model.trim="listStrategyFilter" type="text" placeholder="Strategy keyword" @keyup.enter="loadReviews(1)" />
             <button class="secondary small-btn" @click="loadReviews(1)">Search</button>
           </div>
         </div>
 
-        <div v-for="item in reviews" :key="item.id" class="journal-entry-card accordion">
+        <div v-for="item in reviews" :key="item.id" class="journal-entry-card accordion tv-journal-card">
           <button class="journal-entry-head accordion-trigger" @click="toggleReview(item.id)">
             <div>
               <div class="review-date">{{ item.review_date }}</div>
@@ -135,6 +146,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { createDailyReview, updateDailyReview, deleteDailyReview, fetchDailyReviews, fetchDailyReviewTradeOptions, uploadDailyReviewImages } from '../api/journal'
+import { fetchStrategyOptions } from '../api/common'
 import PaginationControls from '../components/PaginationControls.vue'
 
 const JOURNAL_EXPANDED_KEY = 'journal-expanded-v100'
@@ -144,8 +156,11 @@ const reviews = ref([])
 const tradeOptions = ref([])
 const page = ref(1)
 const totalCount = ref(0)
-const listDateFilter = ref('')
+const listDateFromFilter = ref('')
+const listDateToFilter = ref('')
+const listStrategySelect = ref('')
 const listStrategyFilter = ref('')
+const strategyOptions = ref([])
 const expandedReviewIds = ref([])
 const editingId = ref(null)
 const journalTab = ref('entry')
@@ -169,6 +184,7 @@ const savingLabel = computed(() => {
   if (uploading.value) return 'Uploading...'
   return editingId.value ? 'Update Journal' : 'Save Journal'
 })
+const activeStrategyOptions = computed(() => strategyOptions.value.filter((item) => item.is_active))
 
 function openDatePicker() {
   const dateInput = dateInputRef.value
@@ -183,11 +199,22 @@ function persistExpandedState() { localStorage.setItem(JOURNAL_EXPANDED_KEY, JSO
 async function loadReviews(nextPage = 1) {
   page.value = nextPage
   const params = { page: page.value }
-  if (listDateFilter.value) params.date = listDateFilter.value
+  if (listDateFromFilter.value) params.date_from = listDateFromFilter.value
+  if (listDateToFilter.value) params.date_to = listDateToFilter.value
   if (listStrategyFilter.value) params.strategy = listStrategyFilter.value
   const res = await fetchDailyReviews(params)
   reviews.value = res.data.results || []
   totalCount.value = res.data.count || reviews.value.length
+}
+
+async function loadStrategyOptions() {
+  const res = await fetchStrategyOptions()
+  strategyOptions.value = (res.data?.results || res.data || []).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+}
+
+function syncStrategyKeywordFromSelect() {
+  listStrategyFilter.value = listStrategySelect.value
+  loadReviews(1)
 }
 async function loadTradeOptions() {
   if (!form.value.review_date) return
@@ -256,7 +283,8 @@ async function submitReview() {
     else await createDailyReview(form.value)
     const selectedDate = form.value.review_date
     cancelEdit()
-    listDateFilter.value = selectedDate
+    listDateFromFilter.value = selectedDate
+    listDateToFilter.value = selectedDate
     await loadReviews(1)
   } catch (err) {
     alert(err?.response?.data?.detail || 'Save failed')
@@ -267,6 +295,7 @@ async function submitReview() {
 
 onMounted(async () => {
   restoreExpandedState()
+  await loadStrategyOptions()
   await loadTradeOptions()
   await loadReviews(1)
 })

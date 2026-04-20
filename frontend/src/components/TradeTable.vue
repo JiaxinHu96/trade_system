@@ -27,7 +27,14 @@
         <td>{{ row.avg_open_cost ? formatNumber(row.avg_open_cost) : '-' }}</td>
         <td>{{ formatNumber(row.realized_pnl) }}</td>
         <td>{{ formatNumber(row.commission_total) }}</td>
-        <td><router-link class="inline-link" :to="`/trades/${row.id}`">Detail</router-link></td>
+        <td>
+          <router-link
+            class="inline-link"
+            :to="{ path: `/trades/${row.id}`, query: { symbol: row.symbol, date: row.trade_date } }"
+          >
+            Detail
+          </router-link>
+        </td>
       </tr>
       <tr v-if="!rows.length">
         <td colspan="11" class="empty-row">No trades found.</td>

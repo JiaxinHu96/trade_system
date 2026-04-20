@@ -9,6 +9,10 @@
     </div>
 
     <div v-if="loading" class="card">Loading...</div>
+    <div v-else-if="notFound" class="card">
+      <div class="section-title">Trade not found</div>
+      <p class="muted-copy">当前记录可能在重建分组后已变更。请返回列表重新选择。</p>
+    </div>
     <template v-else-if="trade">
       <div class="grid grid-4">
         <div class="card"><div class="stat-label">Symbol</div><div class="stat-value medium">{{ trade.symbol }}</div></div>
@@ -84,20 +88,34 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchTradeGroupDetail } from '../api/trades'
+import { fetchTradeGroupDetail, fetchTradeGroups } from '../api/trades'
 import { formatNumber } from '../utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
 const trade = ref(null)
+const notFound = ref(false)
 const fmt = (v) => formatNumber(v)
 
 async function loadTrade() {
   loading.value = true
+  notFound.value = false
   try {
     const res = await fetchTradeGroupDetail(route.params.id)
     trade.value = res.data
+  } catch (err) {
+    if (err?.response?.status === 404) {
+      const fallbackSymbol = route.query?.symbol
+      const fallbackDate = route.query?.date
+      if (fallbackSymbol && fallbackDate) {
+        const fallbackRes = await fetchTradeGroups({ symbol: fallbackSymbol, date: fallbackDate, page_size: 1 })
+        trade.value = fallbackRes.data?.results?.[0] || null
+      }
+      notFound.value = !trade.value
+      return
+    }
+    throw err
   } finally {
     loading.value = false
   }
