@@ -21,8 +21,11 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         review_date = self.request.query_params.get('date')
+        strategy = self.request.query_params.get('strategy')
         if review_date:
             qs = qs.filter(review_date=review_date)
+        if strategy:
+            qs = qs.filter(strategy__icontains=strategy)
         return qs
 
     def create(self, request, *args, **kwargs):

@@ -20,8 +20,12 @@ class MistakeTag(models.Model):
 
 class DailyReview(models.Model):
     review_date = models.DateField(default=timezone.localdate, db_index=True)
+    strategy = models.CharField(max_length=128, blank=True, default='')
     market_summary = models.TextField(blank=True, default='')
     emotions = models.TextField(blank=True, default='')
+    thesis = models.TextField(blank=True, default='')
+    entry_logic = models.TextField(blank=True, default='')
+    exit_logic = models.TextField(blank=True, default='')
     lessons = models.TextField(blank=True, default='')
     next_day_plan = models.TextField(blank=True, default='')
     image_url = models.CharField(max_length=500, blank=True, default='')
