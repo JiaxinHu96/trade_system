@@ -341,13 +341,15 @@ function overlayRectWith(catIndex, w) {
 }
 function barRectWith(catIndex, seriesIndex, w, h, zeroYValue) {
   const groupWidth = groupWidthWith(w)
-  const usable = Math.max(16, groupWidth * 0.74)
-  const single = usable / Math.max(normalizedSeries.value.length, 1)
+  const seriesCount = Math.max(normalizedSeries.value.length, 1)
+  const usable = Math.max(0, groupWidth * 0.86)
+  const single = usable / seriesCount
   const x = padLeft + (catIndex * groupWidth) + ((groupWidth - usable) / 2) + (seriesIndex * single)
   const value = normalizedSeries.value[seriesIndex].data[catIndex] || 0
   const y = Math.min(yForValueWith(value, h), zeroYValue)
   const height = Math.max(2, Math.abs(yForValueWith(value, h) - zeroYValue))
-  return { x, y, width: Math.max(7, single - 3), height }
+  const barGap = single >= 6 ? 2 : single >= 3 ? 1 : 0
+  return { x, y, width: Math.max(0.8, single - barGap), height }
 }
 function linePathWith(data, w, h) {
   return data.map((v, idx) => `${idx === 0 ? 'M' : 'L'} ${xForIndexWith(idx, w)} ${yForValueWith(v, h)}`).join(' ')
