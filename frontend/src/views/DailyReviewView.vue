@@ -66,16 +66,49 @@
 
       <div class="card journal-list-card">
         <div class="journal-list-head">
-          <div class="section-title">Journal Timeline</div>
-          <div class="journal-list-filters"><input v-model="listDateFilter" type="date" @change="loadReviews(1)" /></div>
+          <div>
+            <div class="section-title">Journal Timeline</div>
+            <div class="journal-list-subtitle">按日期范围筛选并快速预览每天的复盘与关联交易。</div>
+          </div>
+          <div class="journal-list-filters">
+            <label>
+              <span>Start</span>
+              <input ref="startDateInputRef" v-model="listDateFilterStart" type="date" @focus="openPicker('start')" @click="openPicker('start')" @change="loadReviews(1)" />
+            </label>
+            <label>
+              <span>End</span>
+              <input ref="endDateInputRef" v-model="listDateFilterEnd" type="date" @focus="openPicker('end')" @click="openPicker('end')" @change="loadReviews(1)" />
+            </label>
+            <button type="button" class="secondary small-btn" @click="clearDateRange">Clear</button>
+          </div>
+        </div>
+
+        <div class="journal-quick-stats">
+          <div class="journal-stat-item">
+            <span>Total</span>
+            <strong>{{ totalCount }}</strong>
+          </div>
+          <div class="journal-stat-item">
+            <span>With Linked Trade</span>
+            <strong>{{ linkedTradeCount }}</strong>
+          </div>
+          <div class="journal-stat-item">
+            <span>Date Span</span>
+            <strong>{{ dateRangeLabel }}</strong>
+          </div>
         </div>
 
         <div v-for="item in reviews" :key="item.id" class="journal-entry-card accordion">
           <button class="journal-entry-head accordion-trigger" @click="toggleReview(item.id)">
-            <div>
+            <div class="review-head-main">
               <div class="review-date">{{ item.review_date }}</div>
               <div v-if="item.related_trade_group_display" class="review-linked-trade">
                 {{ item.related_trade_group_display.symbol }} · {{ item.related_trade_group_display.trade_date }} · {{ item.related_trade_group_display.status }}
+              </div>
+              <div class="journal-tags-row">
+                <span class="journal-tag">Summary {{ textLength(item.market_summary) }}</span>
+                <span class="journal-tag">Emotion {{ textLength(item.emotions) }}</span>
+                <span class="journal-tag">Lessons {{ textLength(item.lessons) }}</span>
               </div>
             </div>
             <span class="accordion-indicator">{{ expandedReviewIds.includes(item.id) ? '−' : '+' }}</span>
@@ -119,15 +152,27 @@ const reviews = ref([])
 const tradeOptions = ref([])
 const page = ref(1)
 const totalCount = ref(0)
-const listDateFilter = ref('')
+const listDateFilterStart = ref('')
+const listDateFilterEnd = ref('')
 const expandedReviewIds = ref([])
 const editingId = ref(null)
+const startDateInputRef = ref(null)
+const endDateInputRef = ref(null)
 const freshForm = () => ({ review_date: new Date().toISOString().slice(0, 10), related_trade_group: null, image_urls: [], market_summary: '', emotions: '', lessons: '', next_day_plan: '' })
 const form = ref(freshForm())
 const savingLabel = computed(() => {
   if (loading.value) return editingId.value ? 'Updating...' : 'Saving...'
   if (uploading.value) return 'Uploading...'
   return editingId.value ? 'Update Journal' : 'Save Journal'
+})
+
+const linkedTradeCount = computed(() => reviews.value.filter((item) => item.related_trade_group_display).length)
+const dateRangeLabel = computed(() => {
+  if (!reviews.value.length) return '-'
+  const ordered = [...reviews.value].sort((a, b) => new Date(a.review_date) - new Date(b.review_date))
+  const first = ordered[0]?.review_date
+  const last = ordered[ordered.length - 1]?.review_date
+  return first === last ? first : `${first} → ${last}`
 })
 
 function restoreExpandedState() {
@@ -138,10 +183,28 @@ function persistExpandedState() { localStorage.setItem(JOURNAL_EXPANDED_KEY, JSO
 async function loadReviews(nextPage = 1) {
   page.value = nextPage
   const params = { page: page.value }
-  if (listDateFilter.value) params.date = listDateFilter.value
+  if (listDateFilterStart.value && listDateFilterEnd.value && listDateFilterStart.value === listDateFilterEnd.value) {
+    params.date = listDateFilterStart.value
+  } else {
+    if (listDateFilterStart.value) params.date_from = listDateFilterStart.value
+    if (listDateFilterEnd.value) params.date_to = listDateFilterEnd.value
+  }
   const res = await fetchDailyReviews(params)
   reviews.value = res.data.results || []
   totalCount.value = res.data.count || reviews.value.length
+}
+function openPicker(type) {
+  const target = type === 'start' ? startDateInputRef.value : endDateInputRef.value
+  if (target?.showPicker) target.showPicker()
+}
+function clearDateRange() {
+  listDateFilterStart.value = ''
+  listDateFilterEnd.value = ''
+  loadReviews(1)
+}
+function textLength(text) {
+  if (!text) return '0'
+  return `${text.trim().length} chars`
 }
 async function loadTradeOptions() {
   if (!form.value.review_date) return
@@ -205,7 +268,8 @@ async function submitReview() {
     else await createDailyReview(form.value)
     const selectedDate = form.value.review_date
     cancelEdit()
-    listDateFilter.value = selectedDate
+    listDateFilterStart.value = selectedDate
+    listDateFilterEnd.value = selectedDate
     await loadReviews(1)
   } catch (err) {
     alert(err?.response?.data?.detail || 'Save failed')

@@ -21,8 +21,14 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         review_date = self.request.query_params.get('date')
+        review_date_from = self.request.query_params.get('date_from')
+        review_date_to = self.request.query_params.get('date_to')
         if review_date:
             qs = qs.filter(review_date=review_date)
+        if review_date_from:
+            qs = qs.filter(review_date__gte=review_date_from)
+        if review_date_to:
+            qs = qs.filter(review_date__lte=review_date_to)
         return qs
 
     def create(self, request, *args, **kwargs):
