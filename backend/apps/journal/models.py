@@ -55,6 +55,5 @@ class TradeJournal(models.Model):
     execution_notes = models.TextField(blank=True, default='')
     exit_notes = models.TextField(blank=True, default='')
     rating = models.IntegerField(blank=True, null=True)
-    tv_snapshot_url = models.CharField(max_length=500, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
