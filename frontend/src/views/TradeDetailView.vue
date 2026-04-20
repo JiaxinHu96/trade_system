@@ -58,12 +58,6 @@
           <button @click="saveJournal" :disabled="journalSaving">{{ journalSaving ? 'Saving...' : 'Save Journal' }}</button>
         </div>
 
-        <div v-if="journalImageUrl" class="image-grid compact-image-grid" style="margin-top: 12px">
-          <a :href="journalImageUrl" target="_blank" class="image-link-card">
-            <img :src="journalImageUrl" alt="auto trade snapshot" class="image-preview" />
-          </a>
-        </div>
-        <div v-else class="muted-copy">No auto snapshot yet. Run sync to generate a chart image with buy/sell markers.</div>
       </div>
 
       <div class="card">
@@ -102,7 +96,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchTradeGroupDetail } from '../api/trades'
 import { fetchTradeJournalByTradeGroup, saveTradeJournal } from '../api/journal'
@@ -114,21 +108,15 @@ const loading = ref(true)
 const trade = ref(null)
 const journalId = ref(null)
 const journalSaving = ref(false)
-const journal = ref({ thesis: '', execution_notes: '', exit_notes: '', rating: null, tv_snapshot_url: '' })
+const journal = ref({ thesis: '', execution_notes: '', exit_notes: '', rating: null })
 const fmt = (v) => formatNumber(v)
-const journalImageUrl = computed(() => {
-  if (!journal.value.tv_snapshot_url) return ''
-  const value = journal.value.tv_snapshot_url
-  if (value.startsWith('http://') || value.startsWith('https://')) return value
-  return `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}${value}`
-})
 
 async function loadJournal() {
   const res = await fetchTradeJournalByTradeGroup(route.params.id)
   const existing = res.data.results?.[0]
   if (!existing) {
     journalId.value = null
-    journal.value = { thesis: '', execution_notes: '', exit_notes: '', rating: null, tv_snapshot_url: '' }
+    journal.value = { thesis: '', execution_notes: '', exit_notes: '', rating: null }
     return
   }
   journalId.value = existing.id
@@ -137,7 +125,6 @@ async function loadJournal() {
     execution_notes: existing.execution_notes || '',
     exit_notes: existing.exit_notes || '',
     rating: existing.rating,
-    tv_snapshot_url: existing.tv_snapshot_url || '',
   }
 }
 
@@ -164,7 +151,6 @@ async function saveJournalEntry() {
     }
     const res = await saveTradeJournal(payload)
     journalId.value = res.data.id
-    journal.value.tv_snapshot_url = res.data.tv_snapshot_url || journal.value.tv_snapshot_url
   } finally {
     journalSaving.value = false
   }
