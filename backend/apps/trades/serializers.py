@@ -1,5 +1,17 @@
 from rest_framework import serializers
+from django.db import connection
 from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot
+from apps.journal.models import DailyReview
+
+
+def _daily_review_has_strategy_column():
+    table_name = DailyReview._meta.db_table
+    with connection.cursor() as cursor:
+        columns = {
+            item.name
+            for item in connection.introspection.get_table_description(cursor, table_name)
+        }
+    return 'strategy' in columns
 
 
 class RawIBKRExecutionSerializer(serializers.ModelSerializer):
@@ -55,11 +67,14 @@ class TradeGroupSerializer(serializers.ModelSerializer):
         return TradeFillSerializer(qs, many=True).data
 
     def get_linked_daily_reviews(self, obj):
+        review_qs = obj.daily_reviews.all().order_by('-review_date', '-id')
+        if not _daily_review_has_strategy_column():
+            review_qs = review_qs.defer('strategy', 'thesis', 'entry_logic', 'exit_logic')
         return [
             {
                 'id': review.id,
                 'review_date': review.review_date,
                 'market_summary': review.market_summary,
             }
-            for review in obj.daily_reviews.all().order_by('-review_date', '-id')
+            for review in review_qs
         ]

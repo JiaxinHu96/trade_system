@@ -1,6 +1,16 @@
 from rest_framework import serializers
+from django.db import connection
 from apps.trades.models import TradeGroup
 from .models import DailyReview, DailyReviewImage, SetupTag, MistakeTag, TradeJournal
+
+
+def _daily_review_columns():
+    table_name = DailyReview._meta.db_table
+    with connection.cursor() as cursor:
+        return {
+            item.name
+            for item in connection.introspection.get_table_description(cursor, table_name)
+        }
 
 
 class DailyReviewImageSerializer(serializers.ModelSerializer):
@@ -29,6 +39,13 @@ class DailyReviewSerializer(serializers.ModelSerializer):
         model = DailyReview
         fields = '__all__'
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        available_columns = _daily_review_columns()
+        for field_name in ('strategy', 'thesis', 'entry_logic', 'exit_logic'):
+            if field_name not in available_columns:
+                self.fields.pop(field_name, None)
+
     def get_related_trade_group_display(self, obj):
         trade_group = obj.related_trade_group
         if not trade_group:
@@ -44,12 +61,20 @@ class DailyReviewSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         image_urls = validated_data.pop('image_urls', [])
+        available_columns = _daily_review_columns()
+        for field_name in ('strategy', 'thesis', 'entry_logic', 'exit_logic'):
+            if field_name not in available_columns:
+                validated_data.pop(field_name, None)
         instance = super().create(validated_data)
         self._replace_images(instance, image_urls)
         return instance
 
     def update(self, instance, validated_data):
         image_urls = validated_data.pop('image_urls', None)
+        available_columns = _daily_review_columns()
+        for field_name in ('strategy', 'thesis', 'entry_logic', 'exit_logic'):
+            if field_name not in available_columns:
+                validated_data.pop(field_name, None)
         instance = super().update(instance, validated_data)
         if image_urls is not None:
             self._replace_images(instance, image_urls)

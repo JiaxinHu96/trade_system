@@ -64,6 +64,34 @@
       </div>
 
       <div class="card settings-card">
+        <div class="section-title">Journal Strategies</div>
+        <div class="settings-copy muted-copy">用于 Journal 的 Strategy 下拉配置。可调整排序、启用/停用、增删。</div>
+        <div class="settings-form-grid strategy-settings-grid">
+          <label>
+            <span>New Strategy</span>
+            <input v-model.trim="newStrategyName" type="text" placeholder="例如：Opening Breakout" @keyup.enter="addStrategy" />
+          </label>
+          <div class="settings-actions">
+            <button @click="addStrategy" :disabled="!newStrategyName || strategySaving">{{ strategySaving ? 'Saving...' : 'Add Strategy' }}</button>
+          </div>
+        </div>
+
+        <div class="strategy-list">
+          <div v-for="item in strategyOptions" :key="item.id" class="strategy-row">
+            <input v-model.trim="item.name" type="text" />
+            <input v-model.number="item.sort_order" type="number" min="0" />
+            <label class="strategy-toggle">
+              <input v-model="item.is_active" type="checkbox" />
+              Active
+            </label>
+            <button class="secondary" @click="saveStrategy(item)">Save</button>
+            <button class="secondary" @click="removeStrategy(item.id)">Delete</button>
+          </div>
+          <div v-if="!strategyOptions.length" class="muted-copy">No strategies configured yet.</div>
+        </div>
+      </div>
+
+      <div class="card settings-card">
         <div class="section-title">Local Workspace</div>
         <div class="settings-copy">
           <p>下面这些仍然保存在浏览器本地：</p>
@@ -85,13 +113,24 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { fetchIBKRConfigStatus } from '../api/syncs'
-import { fetchDashboardPreferences, fetchDashboardTabs, saveDashboardPreferences } from '../api/common'
+import {
+  fetchDashboardPreferences,
+  fetchDashboardTabs,
+  saveDashboardPreferences,
+  fetchStrategyOptions,
+  createStrategyOption,
+  updateStrategyOption,
+  deleteStrategyOption,
+} from '../api/common'
 
 const config = ref(null)
 const tabs = ref([])
 const saving = ref(false)
 const form = reactive({ default_dashboard_tab: null, default_date_range: 'all' })
 const ready = computed(() => Boolean(config.value?.token_exists && config.value?.query_id_exists))
+const strategyOptions = ref([])
+const strategySaving = ref(false)
+const newStrategyName = ref('')
 
 async function loadConfigStatus() {
   try {
@@ -119,6 +158,42 @@ async function saveDefaults() {
     saving.value = false
   }
 }
+
+async function loadStrategyOptions() {
+  const res = await fetchStrategyOptions()
+  strategyOptions.value = (res.data?.results || res.data || []).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+}
+
+async function addStrategy() {
+  if (!newStrategyName.value) return
+  strategySaving.value = true
+  try {
+    await createStrategyOption({
+      name: newStrategyName.value,
+      is_active: true,
+      sort_order: strategyOptions.value.length,
+    })
+    newStrategyName.value = ''
+    await loadStrategyOptions()
+  } finally {
+    strategySaving.value = false
+  }
+}
+
+async function saveStrategy(item) {
+  await updateStrategyOption(item.id, {
+    name: item.name,
+    is_active: item.is_active,
+    sort_order: item.sort_order,
+  })
+  await loadStrategyOptions()
+}
+
+async function removeStrategy(id) {
+  if (!window.confirm('Delete this strategy option?')) return
+  await deleteStrategyOption(id)
+  await loadStrategyOptions()
+}
 function clearLocalPrefs() {
   Object.keys(localStorage)
     .filter((key) => key.startsWith('trade-dashboard-') || key.startsWith('tv-') || key.startsWith('journal-'))
@@ -129,5 +204,6 @@ function clearLocalPrefs() {
 onMounted(async () => {
   await loadConfigStatus()
   await loadDashboardSettings()
+  await loadStrategyOptions()
 })
 </script>

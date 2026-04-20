@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import DashboardPreference, DashboardTab
+from .models import DashboardPreference, DashboardTab, StrategyOption
 
 
 class DashboardTabSerializer(serializers.ModelSerializer):
@@ -35,3 +35,17 @@ class DashboardPreferenceSerializer(serializers.ModelSerializer):
 
     def get_default_dashboard_tab_name(self, obj):
         return obj.default_dashboard_tab.name if obj.default_dashboard_tab else None
+
+
+class StrategyOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StrategyOption
+        fields = [
+            "id",
+            "name",
+            "is_active",
+            "sort_order",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]

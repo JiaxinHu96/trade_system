@@ -2,6 +2,7 @@ from pathlib import Path
 import uuid
 
 from django.conf import settings
+from django.db import connection
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -14,17 +15,35 @@ from .models import DailyReview, TradeJournal
 from .serializers import DailyReviewSerializer, TradeJournalSerializer
 
 
+def _daily_review_has_column(column_name):
+    table_name = DailyReview._meta.db_table
+    with connection.cursor() as cursor:
+        columns = {
+            item.name
+            for item in connection.introspection.get_table_description(cursor, table_name)
+        }
+    return column_name in columns
+
+
 class DailyReviewViewSet(viewsets.ModelViewSet):
     queryset = DailyReview.objects.all().order_by('-review_date', '-updated_at')
     serializer_class = DailyReviewSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
+        if not _daily_review_has_column('strategy'):
+            qs = qs.defer('strategy', 'thesis', 'entry_logic', 'exit_logic')
         review_date = self.request.query_params.get('date')
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
         strategy = self.request.query_params.get('strategy')
         if review_date:
             qs = qs.filter(review_date=review_date)
-        if strategy:
+        if date_from:
+            qs = qs.filter(review_date__gte=date_from)
+        if date_to:
+            qs = qs.filter(review_date__lte=date_to)
+        if strategy and _daily_review_has_column('strategy'):
             qs = qs.filter(strategy__icontains=strategy)
         return qs
 
