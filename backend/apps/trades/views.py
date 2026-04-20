@@ -2,6 +2,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
@@ -151,13 +152,22 @@ class TradeGroupViewSet(ReadOnlyModelViewSet):
 
         if account or strategy:
             raw_items = self._filtered_raw_executions()
-            keys = {(item.symbol, item.trade_date) for item in raw_items if item.trade_date}
-            if not keys:
+            if not raw_items:
                 return qs.none()
-            key_filter = Q()
-            for item_symbol, item_date in keys:
-                key_filter |= Q(symbol=item_symbol, trade_date=item_date)
-            qs = qs.filter(key_filter)
+            candidate_ids = []
+            groups = list(qs)
+            for group in groups:
+                matched = [
+                    item for item in raw_items
+                    if item.symbol == group.symbol
+                    and (not group.opened_at or item.executed_at >= group.opened_at)
+                    and (not group.closed_at or item.executed_at <= group.closed_at)
+                ]
+                if matched:
+                    candidate_ids.append(group.id)
+            if not candidate_ids:
+                return qs.none()
+            qs = qs.filter(id__in=candidate_ids)
 
         return qs
 
@@ -198,6 +208,23 @@ class TradeGroupViewSet(ReadOnlyModelViewSet):
         avg_loss = (sum((_safe_decimal(obj.realized_pnl) for obj in losses), ZERO) / Decimal(len(losses))) if losses else ZERO
         largest_win = max((_safe_decimal(obj.realized_pnl) for obj in wins), default=ZERO)
         largest_loss = min((_safe_decimal(obj.realized_pnl) for obj in losses), default=ZERO)
+        hold_minutes = []
+        for obj in closed_groups:
+            if not obj.opened_at or not obj.closed_at:
+                continue
+            opened_at = obj.opened_at
+            closed_at = obj.closed_at
+            if timezone.is_naive(opened_at):
+                opened_at = timezone.make_aware(opened_at, timezone.get_current_timezone())
+            if timezone.is_naive(closed_at):
+                closed_at = timezone.make_aware(closed_at, timezone.get_current_timezone())
+            delta_minutes = Decimal(str((closed_at - opened_at).total_seconds())) / Decimal('60')
+            if delta_minutes >= ZERO:
+                hold_minutes.append(delta_minutes)
+        avg_hold_minutes = (
+            sum(hold_minutes, ZERO) / Decimal(len(hold_minutes))
+            if hold_minutes else ZERO
+        )
 
         summary = {
             'trade_groups': len(groups),
@@ -220,6 +247,7 @@ class TradeGroupViewSet(ReadOnlyModelViewSet):
             'avg_loss': float(round(avg_loss, 2)),
             'largest_win': float(round(largest_win, 2)),
             'largest_loss': float(round(largest_loss, 2)),
+            'avg_hold_minutes': float(round(avg_hold_minutes, 2)),
             'gross_profit': float(gross_profit),
             'gross_loss': float(gross_loss),
             'current_open_symbols': [obj.symbol for obj in current_open_groups],

@@ -166,51 +166,19 @@ def rebuild_all_trade_groups():
         if current_bucket is not None:
             lifecycle_buckets.append(current_bucket)
 
-    merged_buckets = {}
     for bucket in sorted(
         lifecycle_buckets,
         key=lambda item: (
-            item['closed_at'].date() if item['closed_at'] else item['opened_at'].date(),
+            item['closed_at'] or item['last_fill_at'] or item['opened_at'],
             item['symbol'],
             item['opened_at'],
         ),
     ):
-        group_trade_date = bucket['closed_at'].date() if bucket['closed_at'] else bucket['opened_at'].date()
-        merge_key = (bucket['symbol'], group_trade_date)
-
-        existing = merged_buckets.get(merge_key)
-        if existing is None:
-            merged_buckets[merge_key] = {
-                **bucket,
-                'trade_date': group_trade_date,
-                'lot_snapshots': list(bucket['lot_snapshots']),
-            }
-            continue
-
-        existing['asset_class'] = existing.get('asset_class') or bucket.get('asset_class')
-        existing['total_buy_qty'] += bucket['total_buy_qty']
-        existing['total_sell_qty'] += bucket['total_sell_qty']
-        existing['buy_notional'] += bucket['buy_notional']
-        existing['sell_notional'] += bucket['sell_notional']
-        existing['net_qty'] += bucket['net_qty']
-        existing['realized_pnl'] += bucket['realized_pnl']
-        existing['commission_total'] += bucket['commission_total']
-        existing['opened_at'] = min(existing['opened_at'], bucket['opened_at'])
-        existing['last_fill_at'] = max(existing['last_fill_at'], bucket['last_fill_at'])
-
-        if bucket['closed_at'] is not None:
-            if existing['closed_at'] is None:
-                existing['closed_at'] = bucket['closed_at']
-            else:
-                existing['closed_at'] = max(existing['closed_at'], bucket['closed_at'])
-
-        existing['open_qty'] = bucket['open_qty']
-        existing['avg_open_cost'] = bucket['avg_open_cost']
-        existing['direction'] = bucket['direction']
-        existing['status'] = bucket['status']
-        existing['lot_snapshots'] = list(bucket['lot_snapshots'])
-
-    for bucket in merged_buckets.values():
+        group_trade_date = (
+            bucket['closed_at'].date()
+            if bucket['closed_at']
+            else bucket['opened_at'].date()
+        )
         avg_buy_price = None
         if bucket['total_buy_qty'] > ZERO:
             avg_buy_price = bucket['buy_notional'] / bucket['total_buy_qty']
@@ -221,7 +189,7 @@ def rebuild_all_trade_groups():
 
         group = TradeGroup.objects.create(
             symbol=bucket['symbol'],
-            trade_date=bucket['trade_date'],
+            trade_date=group_trade_date,
             asset_class=bucket['asset_class'],
             direction=bucket['direction'],
             status=bucket['status'],
