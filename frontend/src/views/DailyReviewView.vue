@@ -10,14 +10,13 @@
 
     <div class="card tv-tabbed-panel journal-tab-card">
       <div class="tv-panel-tabs">
-        <button :class="['tv-subtab', { active: journalTab === 'entry' }]" @click="journalTab = 'entry'">Journal Entry</button>
-        <button :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="journalTab = 'timeline'">Journal Timeline</button>
+        <button type="button" aria-label="Switch to Journal Entry" :class="['tv-subtab', { active: journalTab === 'entry' }]" @click="journalTab = 'entry'">Journal Entry</button>
+        <button type="button" aria-label="Switch to Journal Timeline" :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="journalTab = 'timeline'">Journal Timeline</button>
       </div>
     </div>
 
-    <div class="journal-layout journal-layout-wide">
-      <div class="card journal-form-card">
-        <template v-if="journalTab === 'entry'">
+    <div class="journal-layout journal-layout-wide journal-shell">
+      <section v-if="journalTab === 'entry'" class="card journal-form-card journal-surface">
         <div class="section-title">{{ editingId ? 'Edit Journal Entry' : 'New Journal Entry' }}</div>
         <div class="journal-form-grid">
           <label class="journal-date-field">
@@ -80,10 +79,9 @@
           <button @click="submitReview" :disabled="loading || uploading">{{ savingLabel }}</button>
           <button v-if="editingId" class="secondary" @click="cancelEdit">Cancel</button>
         </div>
-      </div>
+      </section>
 
-      <div class="card journal-list-card">
-        <template v-if="journalTab === 'timeline'">
+      <section v-if="journalTab === 'timeline'" class="card journal-list-card journal-surface">
         <div class="journal-list-head">
           <div class="section-title">Journal Timeline</div>
           <div class="journal-list-filters timeline-filters">
@@ -133,7 +131,7 @@
         </div>
         <div v-if="!reviews.length" class="empty-row">No journal entries yet.</div>
         <PaginationControls :count="totalCount" :current-page="page" :page-size="20" @change="loadReviews" />
-      </div>
+      </section>
     </div>
   </div>
 </template>
