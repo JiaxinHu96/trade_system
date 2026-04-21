@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections import defaultdict
 from decimal import Decimal
 
+from django.db import connection
 from django.db import transaction
 
 from .matching import DayFIFOSummary
-from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot
+from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot, TradeMatchedLot
 
 
 ZERO = Decimal('0')
@@ -18,6 +19,11 @@ def _to_decimal(value, default: str = '0') -> Decimal:
     if isinstance(value, Decimal):
         return value
     return Decimal(str(value))
+
+
+def _has_trade_matched_lot_table():
+    with connection.cursor() as cursor:
+        return TradeMatchedLot._meta.db_table in connection.introspection.table_names(cursor)
 
 
 @transaction.atomic
@@ -67,7 +73,11 @@ def rebuild_all_trade_groups():
         .order_by('symbol', 'asset_class', 'executed_at', 'id')
     )
 
+    has_matched_lot_table = _has_trade_matched_lot_table()
+
     TradeLotSnapshot.objects.all().delete()
+    if has_matched_lot_table:
+        TradeMatchedLot.objects.all().delete()
     TradeGroup.objects.all().delete()
 
     if not fills:
@@ -170,9 +180,93 @@ def rebuild_all_trade_groups():
                     'last_fill_at': opened_at,
                     'direction': direction,
                     'status': 'open',
-                    'lot_snapshots': [dict(snapshot)],
+                    'had_buy': False,
+                    'had_sell': False,
+                    'lot_snapshots': [],
+                    'matched_lots': [],
                 }
             )
+
+            match_info = matcher.apply_fill(fill)
+            raw_realized = None
+            if getattr(fill, 'raw_execution', None) is not None and fill.raw_execution.realized_pnl is not None:
+                raw_realized = _to_decimal(fill.raw_execution.realized_pnl)
+            if raw_realized is not None and match_info['closed_qty'] > ZERO:
+                realized_delta = raw_realized
+            else:
+                realized_delta = match_info['fallback_realized_pnl']
+
+            qty = _to_decimal(fill.quantity)
+            price = _to_decimal(fill.price)
+            signed_qty = _to_decimal(fill.signed_qty)
+            commission = _to_decimal(fill.commission)
+
+            current_bucket['last_fill_at'] = fill.executed_at
+            current_bucket['commission_total'] += commission
+            current_bucket['realized_pnl'] += realized_delta
+            current_bucket['net_qty'] += signed_qty
+
+            if (fill.side or '').upper() == 'BUY':
+                current_bucket['had_buy'] = True
+                current_bucket['total_buy_qty'] += qty
+                current_bucket['buy_notional'] += qty * price
+            else:
+                current_bucket['had_sell'] = True
+                current_bucket['total_sell_qty'] += qty
+                current_bucket['sell_notional'] += qty * price
+
+            closed_qty = _to_decimal(match_info.get('closed_qty'))
+            for closed_lot in (match_info.get('closed_lots') or []):
+                matched_qty = _to_decimal(closed_lot.get('matched_qty'))
+                if matched_qty <= ZERO:
+                    continue
+                if raw_realized is not None and closed_qty > ZERO:
+                    lot_realized = raw_realized * (matched_qty / closed_qty)
+                else:
+                    lot_realized = _to_decimal(closed_lot.get('realized_pnl'))
+                lot_side = (closed_lot.get('lot_side') or '').upper()
+                current_bucket['matched_lots'].append(
+                    {
+                        'symbol': symbol,
+                        'side': lot_side,
+                        'matched_qty': matched_qty,
+                        'open_price': _to_decimal(closed_lot.get('open_price')),
+                        'close_price': _to_decimal(closed_lot.get('close_price')),
+                        'realized_pnl': lot_realized,
+                        'commission_total': _to_decimal(closed_lot.get('entry_commission')) + _to_decimal(closed_lot.get('exit_commission')),
+                        'opened_at': closed_lot.get('opened_at') or fill.executed_at,
+                        'closed_at': fill.executed_at,
+                    }
+                )
+
+            open_qty = matcher.get_open_qty()
+            current_bucket['open_qty'] = open_qty
+            current_bucket['avg_open_cost'] = matcher.get_avg_open_cost()
+            current_bucket['lot_snapshots'] = [dict(item) for item in matcher.snapshot_open_lots()]
+
+            if open_qty > ZERO:
+                current_bucket['direction'] = 'LONG'
+            elif open_qty < ZERO:
+                current_bucket['direction'] = 'SHORT'
+            else:
+                current_bucket['direction'] = None
+
+            if open_qty == ZERO:
+                current_bucket['status'] = 'closed'
+                current_bucket['closed_at'] = fill.executed_at
+            else:
+                if current_bucket['had_buy'] and current_bucket['had_sell']:
+                    current_bucket['status'] = 'partial'
+                else:
+                    current_bucket['status'] = 'open'
+                current_bucket['closed_at'] = None
+
+            if current_bucket['status'] == 'closed':
+                lifecycle_buckets.append(current_bucket)
+                current_bucket = None
+
+        if current_bucket is not None:
+            lifecycle_buckets.append(current_bucket)
 
     for bucket in sorted(
         trade_buckets,
@@ -227,5 +321,25 @@ def rebuild_all_trade_groups():
                         opened_at=snapshot['opened_at'] or group.opened_at,
                     )
                     for snapshot in snapshots
+                ]
+            )
+
+        matched_lots = bucket.get('matched_lots') or []
+        if matched_lots and has_matched_lot_table:
+            TradeMatchedLot.objects.bulk_create(
+                [
+                    TradeMatchedLot(
+                        trade_group=group,
+                        symbol=lot['symbol'],
+                        side=lot['side'],
+                        matched_qty=lot['matched_qty'],
+                        open_price=lot['open_price'],
+                        close_price=lot['close_price'],
+                        realized_pnl=lot['realized_pnl'],
+                        commission_total=lot['commission_total'],
+                        opened_at=lot['opened_at'],
+                        closed_at=lot['closed_at'],
+                    )
+                    for lot in matched_lots
                 ]
             )

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db import connection
-from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot
+from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot, TradeMatchedLot
 from apps.journal.models import DailyReview
 
 
@@ -12,6 +12,11 @@ def _daily_review_has_strategy_column():
             for item in connection.introspection.get_table_description(cursor, table_name)
         }
     return 'strategy' in columns
+
+
+def _trade_matched_lot_table_exists():
+    with connection.cursor() as cursor:
+        return TradeMatchedLot._meta.db_table in connection.introspection.table_names(cursor)
 
 
 class RawIBKRExecutionSerializer(serializers.ModelSerializer):
@@ -32,8 +37,15 @@ class TradeLotSnapshotSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class TradeMatchedLotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TradeMatchedLot
+        fields = '__all__'
+
+
 class TradeGroupSerializer(serializers.ModelSerializer):
     lot_snapshots = TradeLotSnapshotSerializer(many=True, read_only=True)
+    matched_lots = TradeMatchedLotSerializer(many=True, read_only=True)
     raw_executions = serializers.SerializerMethodField()
     fills = serializers.SerializerMethodField()
     linked_daily_reviews = serializers.SerializerMethodField()
@@ -41,6 +53,11 @@ class TradeGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = TradeGroup
         fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not _trade_matched_lot_table_exists():
+            self.fields.pop('matched_lots', None)
 
     def _group_executions_queryset(self, obj):
         qs = RawIBKRExecution.objects.filter(symbol=obj.symbol)
