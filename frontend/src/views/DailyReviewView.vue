@@ -8,17 +8,15 @@
       </div>
     </div>
 
-    <div class="card tv-tabbed-panel">
+    <div class="card tv-tabbed-panel journal-tab-card">
       <div class="tv-panel-tabs">
         <button :class="['tv-subtab', { active: journalTab === 'entry' }]" @click="journalTab = 'entry'">Journal Entry</button>
         <button :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="journalTab = 'timeline'">Journal Timeline</button>
       </div>
     </div>
 
-    <div class="journal-layout journal-layout-wide">
-      <div class="card journal-form-card">
-        <div v-if="journalTab !== 'entry'" class="muted-copy">切换到 “Journal Entry” 来填写当日复盘。</div>
-        <template v-else>
+    <div class="journal-layout journal-layout-wide journal-shell">
+      <div v-if="journalTab === 'entry'" class="card journal-form-card journal-surface">
         <div class="section-title">{{ editingId ? 'Edit Journal Entry' : 'New Journal Entry' }}</div>
         <div class="journal-form-grid">
           <label class="journal-date-field">
@@ -64,7 +62,7 @@
         <div class="journal-text-grid">
           <label>
             <span>Strategy</span>
-            <select v-model="form.strategy">
+            <select v-model="form.strategy" class="compact-strategy-select">
               <option value="">Select strategy</option>
               <option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option>
             </select>
@@ -81,22 +79,18 @@
           <button @click="submitReview" :disabled="loading || uploading">{{ savingLabel }}</button>
           <button v-if="editingId" class="secondary" @click="cancelEdit">Cancel</button>
         </div>
-        </template>
       </div>
 
-      <div class="card journal-list-card">
-        <div v-if="journalTab !== 'timeline'" class="muted-copy">切换到 “Journal Timeline” 查看与筛选历史日记。</div>
-        <template v-else>
+      <div v-if="journalTab === 'timeline'" class="card journal-list-card journal-surface">
         <div class="journal-list-head">
           <div class="section-title">Journal Timeline</div>
           <div class="journal-list-filters timeline-filters">
             <input ref="listDateFromInputRef" v-model="listDateFromFilter" type="date" @change="loadReviews(1)" @click="openListDatePicker('from')" @focus="openListDatePicker('from')" />
             <input ref="listDateToInputRef" v-model="listDateToFilter" type="date" @change="loadReviews(1)" @click="openListDatePicker('to')" @focus="openListDatePicker('to')" />
-            <select v-model="listStrategySelect" @change="syncStrategyKeywordFromSelect">
+            <select v-model="listStrategySelect" @change="loadReviews(1)">
               <option value="">All strategies</option>
               <option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option>
             </select>
-            <input v-model.trim="listStrategyFilter" type="text" placeholder="Strategy keyword" @keyup.enter="loadReviews(1)" />
             <button class="secondary small-btn" @click="loadReviews(1)">Search</button>
           </div>
         </div>
@@ -114,14 +108,14 @@
 
           <div v-if="expandedReviewIds.includes(item.id)" class="accordion-body">
             <div class="journal-entry-grid">
-              <div><strong>Strategy</strong><p>{{ item.strategy || '-' }}</p></div>
-              <div><strong>Market</strong><p>{{ item.market_summary || '-' }}</p></div>
-              <div><strong>Emotions</strong><p>{{ item.emotions || '-' }}</p></div>
-              <div><strong>Thesis</strong><p>{{ item.thesis || '-' }}</p></div>
-              <div><strong>Entry Logic</strong><p>{{ item.entry_logic || '-' }}</p></div>
-              <div><strong>Exit Logic</strong><p>{{ item.exit_logic || '-' }}</p></div>
-              <div><strong>Lessons</strong><p>{{ item.lessons || '-' }}</p></div>
-              <div><strong>Next Day</strong><p>{{ item.next_day_plan || '-' }}</p></div>
+              <div><strong>Strategy</strong><div class="journal-entry-content">{{ item.strategy || '-' }}</div></div>
+              <div><strong>Market</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.market_summary || '-'"></textarea></div>
+              <div><strong>Emotions</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.emotions || '-'"></textarea></div>
+              <div><strong>Thesis</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.thesis || '-'"></textarea></div>
+              <div><strong>Entry Logic</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.entry_logic || '-'"></textarea></div>
+              <div><strong>Exit Logic</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.exit_logic || '-'"></textarea></div>
+              <div><strong>Lessons</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.lessons || '-'"></textarea></div>
+              <div><strong>Next Day</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.next_day_plan || '-'"></textarea></div>
             </div>
             <div class="journal-inline-actions">
               <button class="secondary small-btn" @click="editReview(item)">Edit</button>
@@ -137,7 +131,6 @@
         </div>
         <div v-if="!reviews.length" class="empty-row">No journal entries yet.</div>
         <PaginationControls :count="totalCount" :current-page="page" :page-size="20" @change="loadReviews" />
-        </template>
       </div>
     </div>
   </div>
@@ -159,7 +152,6 @@ const totalCount = ref(0)
 const listDateFromFilter = ref('')
 const listDateToFilter = ref('')
 const listStrategySelect = ref('')
-const listStrategyFilter = ref('')
 const strategyOptions = ref([])
 const expandedReviewIds = ref([])
 const editingId = ref(null)
@@ -207,7 +199,7 @@ async function loadReviews(nextPage = 1) {
   const params = { page: page.value }
   if (listDateFromFilter.value) params.date_from = listDateFromFilter.value
   if (listDateToFilter.value) params.date_to = listDateToFilter.value
-  if (listStrategyFilter.value) params.strategy = listStrategyFilter.value
+  if (listStrategySelect.value) params.strategy = listStrategySelect.value
   const res = await fetchDailyReviews(params)
   reviews.value = res.data.results || []
   totalCount.value = res.data.count || reviews.value.length
@@ -223,10 +215,6 @@ async function loadStrategyOptions() {
   }
 }
 
-function syncStrategyKeywordFromSelect() {
-  listStrategyFilter.value = listStrategySelect.value
-  loadReviews(1)
-}
 async function loadTradeOptions() {
   if (!form.value.review_date) return
   const res = await fetchDailyReviewTradeOptions(form.value.review_date)
