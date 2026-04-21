@@ -100,6 +100,7 @@ class DayFIFOSummary:
                 'closed_qty': ZERO,
                 'opened_qty': ZERO,
                 'fallback_realized_pnl': ZERO,
+                'closed_lots': [],
                 'multiplier': multiplier,
             }
 
@@ -107,6 +108,7 @@ class DayFIFOSummary:
         remaining_qty = qty
         closed_qty = ZERO
         fallback_realized_pnl = ZERO
+        closed_lots = []
 
         if side == 'BUY':
             opposite_lots = self.short_lots
@@ -122,10 +124,26 @@ class DayFIFOSummary:
         while remaining_qty > ZERO and opposite_lots:
             lot = opposite_lots[0]
             matched_qty = min(remaining_qty, lot.remaining_qty)
-            fallback_realized_pnl += close_fn(lot, matched_qty, fill_price, close_commission_per_unit)
+            realized_piece = close_fn(lot, matched_qty, fill_price, close_commission_per_unit)
+            entry_commission = lot.entry_commission_per_unit * matched_qty
+            exit_commission = close_commission_per_unit * matched_qty
+            fallback_realized_pnl += realized_piece
             lot.remaining_qty -= matched_qty
             remaining_qty -= matched_qty
             closed_qty += matched_qty
+            closed_lots.append(
+                {
+                    'lot_side': lot.side,
+                    'matched_qty': matched_qty,
+                    'open_price': lot.open_price,
+                    'close_price': fill_price,
+                    'opened_at': lot.opened_at,
+                    'entry_commission': entry_commission,
+                    'exit_commission': exit_commission,
+                    'realized_pnl': realized_piece,
+                    'multiplier': lot.multiplier,
+                }
+            )
             if lot.remaining_qty <= ZERO:
                 opposite_lots.pop(0)
 
@@ -149,6 +167,7 @@ class DayFIFOSummary:
             'closed_qty': closed_qty,
             'opened_qty': opened_qty,
             'fallback_realized_pnl': fallback_realized_pnl,
+            'closed_lots': closed_lots,
             'multiplier': multiplier,
         }
 
