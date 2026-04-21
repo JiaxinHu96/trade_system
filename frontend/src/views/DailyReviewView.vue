@@ -8,7 +8,7 @@
       </div>
     </div>
 
-    <div class="card tv-tabbed-panel">
+    <div class="card tv-tabbed-panel journal-tab-card">
       <div class="tv-panel-tabs">
         <button :class="['tv-subtab', { active: journalTab === 'entry' }]" @click="journalTab = 'entry'">Journal Entry</button>
         <button :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="journalTab = 'timeline'">Journal Timeline</button>
@@ -80,7 +80,6 @@
           <button @click="submitReview" :disabled="loading || uploading">{{ savingLabel }}</button>
           <button v-if="editingId" class="secondary" @click="cancelEdit">Cancel</button>
         </div>
-        </template>
       </div>
 
       <div class="card journal-list-card">
@@ -134,7 +133,6 @@
         </div>
         <div v-if="!reviews.length" class="empty-row">No journal entries yet.</div>
         <PaginationControls :count="totalCount" :current-page="page" :page-size="20" @change="loadReviews" />
-        </template>
       </div>
     </div>
   </div>

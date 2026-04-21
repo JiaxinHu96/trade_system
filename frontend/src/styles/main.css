@@ -1381,8 +1381,8 @@ body {
 .settings-list { margin: 8px 0 0 18px; padding: 0; }
 .settings-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .journal-layout-wide {
-  grid-template-columns: minmax(360px, 0.95fr) minmax(540px, 1.2fr);
-  gap: 18px;
+  grid-template-columns: 1fr;
+  gap: 14px;
 }
 .journal-form-grid {
   display: grid;
@@ -1489,6 +1489,36 @@ body {
 }
 .compact-header-card {
   margin-bottom: 0;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+  border: 1px solid #e6edf9;
+}
+.journal-shell {
+  margin-top: 6px;
+}
+.journal-surface {
+  border: 1px solid #e6edf9;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+.journal-tab-card {
+  border: 1px solid #e6edf9;
+  background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+}
+.journal-tab-card .tv-panel-tabs {
+  padding: 4px;
+  background: #eef3fc;
+  border-radius: 999px;
+  width: fit-content;
+}
+.journal-tab-card .tv-panel-tabs .tv-subtab {
+  border-radius: 999px;
+  min-height: 42px;
+  padding: 10px 22px;
+  font-weight: 700;
+}
+.journal-tab-card .tv-panel-tabs .tv-subtab.active {
+  box-shadow: 0 8px 18px rgba(47, 99, 240, 0.26);
 }
 @media (max-width: 1200px) {
   .tv-dashboard-chart-grid-triple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2041,6 +2071,8 @@ body {
 }
 .timeline-filters .small-btn {
   white-space: nowrap;
+  min-height: 42px;
+  border-radius: 12px;
 }
 .tv-journal-card {
   border: 1px solid var(--tv-line);
