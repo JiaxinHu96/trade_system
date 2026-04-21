@@ -2034,7 +2034,7 @@ body {
 /* journal + strategy settings enhancements */
 .timeline-filters {
   display: grid;
-  grid-template-columns: 140px 140px minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  grid-template-columns: 140px 140px minmax(220px, 1fr) auto;
   align-items: center;
   width: 100%;
   gap: 8px;
@@ -2077,6 +2077,31 @@ body {
   border: 1px solid #e7eefc;
   border-radius: 12px;
   padding: 10px 12px;
+}
+.compact-strategy-select {
+  min-height: 44px;
+  max-width: 300px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.journal-entry-content {
+  margin-top: 8px;
+  color: #1f2937;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.journal-entry-content-resizable {
+  width: 100%;
+  min-height: 120px;
+  max-height: 420px;
+  resize: vertical;
+  overflow: auto;
+  border: 1px solid #d7e3f8;
+  border-radius: 10px;
+  background: #fdfefe;
+  padding: 10px;
+  font: inherit;
+  line-height: 1.5;
 }
 .strategy-settings-grid {
   align-items: end;
