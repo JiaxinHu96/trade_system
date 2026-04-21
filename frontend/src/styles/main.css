@@ -2064,10 +2064,14 @@ body {
 /* journal + strategy settings enhancements */
 .timeline-filters {
   display: grid;
-  grid-template-columns: 140px 140px minmax(220px, 1fr) auto;
+  grid-template-columns: 140px 140px minmax(180px, 260px) auto;
   align-items: center;
+  justify-content: start;
   width: 100%;
   gap: 8px;
+}
+.timeline-strategy-select {
+  width: min(260px, 100%);
 }
 .timeline-filters .small-btn {
   white-space: nowrap;
@@ -2114,11 +2118,15 @@ body {
 .journal-form-card .section-title {
   letter-spacing: 0.01em;
 }
+.journal-strategy-row {
+  grid-column: 1 / -1;
+  max-width: 320px;
+}
 .compact-strategy-select {
-  min-height: 44px;
-  max-width: 300px;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  min-height: 40px;
+  max-width: 320px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 .journal-entry-content {
   margin-top: 8px;

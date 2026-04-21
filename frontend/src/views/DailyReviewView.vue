@@ -60,7 +60,7 @@
         </div>
 
         <div class="journal-text-grid">
-          <label>
+          <label class="journal-strategy-row">
             <span>Strategy</span>
             <select v-model="form.strategy" class="compact-strategy-select">
               <option value="">Select strategy</option>
@@ -87,7 +87,7 @@
           <div class="journal-list-filters timeline-filters">
             <input ref="listDateFromInputRef" v-model="listDateFromFilter" type="date" @change="loadReviews(1)" @click="openListDatePicker('from')" @focus="openListDatePicker('from')" />
             <input ref="listDateToInputRef" v-model="listDateToFilter" type="date" @change="loadReviews(1)" @click="openListDatePicker('to')" @focus="openListDatePicker('to')" />
-            <select v-model="listStrategySelect" @change="loadReviews(1)">
+            <select v-model="listStrategySelect" class="timeline-strategy-select" @change="loadReviews(1)">
               <option value="">All strategies</option>
               <option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option>
             </select>
