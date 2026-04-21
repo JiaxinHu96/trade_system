@@ -2110,10 +2110,6 @@ body {
   border-radius: 12px;
   padding: 10px 12px;
 }
-.journal-list-card .section-title,
-.journal-form-card .section-title {
-  letter-spacing: 0.01em;
-}
 .compact-strategy-select {
   min-height: 44px;
   max-width: 300px;

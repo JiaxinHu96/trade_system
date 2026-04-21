@@ -15,8 +15,9 @@
       </div>
     </div>
 
-    <div class="journal-layout journal-layout-wide journal-shell">
-      <div v-if="journalTab === 'entry'" class="card journal-form-card journal-surface">
+    <div class="journal-layout journal-layout-wide">
+      <div class="card journal-form-card">
+        <template v-if="journalTab === 'entry'">
         <div class="section-title">{{ editingId ? 'Edit Journal Entry' : 'New Journal Entry' }}</div>
         <div class="journal-form-grid">
           <label class="journal-date-field">
@@ -81,7 +82,8 @@
         </div>
       </div>
 
-      <div v-if="journalTab === 'timeline'" class="card journal-list-card journal-surface">
+      <div class="card journal-list-card">
+        <template v-if="journalTab === 'timeline'">
         <div class="journal-list-head">
           <div class="section-title">Journal Timeline</div>
           <div class="journal-list-filters timeline-filters">
