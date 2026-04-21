@@ -83,7 +83,7 @@ def rebuild_all_trade_groups():
     if not fills:
         return
 
-    lifecycle_buckets = []
+    trade_buckets = []
     fills_by_position_key = defaultdict(list)
     for fill in fills:
         account = getattr(fill.raw_execution, 'account', None) if getattr(fill, 'raw_execution', None) else None
@@ -92,32 +92,100 @@ def rebuild_all_trade_groups():
 
     for (_, symbol, asset_class), key_fills in fills_by_position_key.items():
         matcher = DayFIFOSummary()
-        current_bucket = None
 
         for fill in key_fills:
-            if current_bucket is None:
-                current_bucket = {
+            match_info = matcher.apply_fill(fill)
+            raw_realized = None
+            if getattr(fill, 'raw_execution', None) is not None and fill.raw_execution.realized_pnl is not None:
+                raw_realized = _to_decimal(fill.raw_execution.realized_pnl)
+            closed_qty = _to_decimal(match_info.get('closed_qty'))
+            closed_lots = match_info.get('closed_lots') or []
+            for closed_lot in closed_lots:
+                matched_qty = _to_decimal(closed_lot.get('matched_qty'))
+                if matched_qty <= ZERO:
+                    continue
+                if raw_realized is not None and closed_qty > ZERO:
+                    realized_piece = raw_realized * (matched_qty / closed_qty)
+                else:
+                    realized_piece = _to_decimal(closed_lot.get('realized_pnl'))
+                open_price = _to_decimal(closed_lot.get('open_price'))
+                close_price = _to_decimal(closed_lot.get('close_price'))
+                lot_side = (closed_lot.get('lot_side') or '').upper()
+                if lot_side == 'SHORT':
+                    buy_notional = matched_qty * close_price
+                    sell_notional = matched_qty * open_price
+                else:
+                    buy_notional = matched_qty * open_price
+                    sell_notional = matched_qty * close_price
+
+                trade_buckets.append(
+                    {
+                        'symbol': symbol,
+                        'asset_class': asset_class,
+                        'total_buy_qty': matched_qty,
+                        'total_sell_qty': matched_qty,
+                        'buy_notional': buy_notional,
+                        'sell_notional': sell_notional,
+                        'net_qty': ZERO,
+                        'avg_open_cost': None,
+                        'open_qty': ZERO,
+                        'realized_pnl': realized_piece,
+                        'commission_total': _to_decimal(closed_lot.get('entry_commission')) + _to_decimal(closed_lot.get('exit_commission')),
+                        'opened_at': closed_lot.get('opened_at') or fill.executed_at,
+                        'closed_at': fill.executed_at,
+                        'last_fill_at': fill.executed_at,
+                        'direction': None,
+                        'status': 'closed',
+                        'lot_snapshots': [],
+                    }
+                )
+
+        for snapshot in matcher.snapshot_open_lots():
+            remaining_qty = _to_decimal(snapshot.get('remaining_qty'))
+            if remaining_qty <= ZERO:
+                continue
+            lot_side = (snapshot.get('side') or '').upper()
+            open_price = _to_decimal(snapshot.get('open_price'))
+            opened_at = snapshot.get('opened_at')
+            if lot_side == 'SHORT':
+                total_buy_qty = ZERO
+                total_sell_qty = remaining_qty
+                buy_notional = ZERO
+                sell_notional = remaining_qty * open_price
+                net_qty = -remaining_qty
+                direction = 'SHORT'
+            else:
+                total_buy_qty = remaining_qty
+                total_sell_qty = ZERO
+                buy_notional = remaining_qty * open_price
+                sell_notional = ZERO
+                net_qty = remaining_qty
+                direction = 'LONG'
+
+            trade_buckets.append(
+                {
                     'symbol': symbol,
                     'asset_class': asset_class,
-                    'total_buy_qty': ZERO,
-                    'total_sell_qty': ZERO,
-                    'buy_notional': ZERO,
-                    'sell_notional': ZERO,
-                    'net_qty': ZERO,
-                    'avg_open_cost': None,
-                    'open_qty': ZERO,
+                    'total_buy_qty': total_buy_qty,
+                    'total_sell_qty': total_sell_qty,
+                    'buy_notional': buy_notional,
+                    'sell_notional': sell_notional,
+                    'net_qty': net_qty,
+                    'avg_open_cost': open_price,
+                    'open_qty': net_qty,
                     'realized_pnl': ZERO,
                     'commission_total': ZERO,
-                    'opened_at': fill.executed_at,
+                    'opened_at': opened_at,
                     'closed_at': None,
-                    'last_fill_at': fill.executed_at,
-                    'direction': None,
+                    'last_fill_at': opened_at,
+                    'direction': direction,
                     'status': 'open',
                     'had_buy': False,
                     'had_sell': False,
                     'lot_snapshots': [],
                     'matched_lots': [],
                 }
+            )
 
             match_info = matcher.apply_fill(fill)
             raw_realized = None
@@ -201,7 +269,7 @@ def rebuild_all_trade_groups():
             lifecycle_buckets.append(current_bucket)
 
     for bucket in sorted(
-        lifecycle_buckets,
+        trade_buckets,
         key=lambda item: (
             item['closed_at'] or item['last_fill_at'] or item['opened_at'],
             item['symbol'],
