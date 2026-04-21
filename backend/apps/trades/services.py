@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.db import transaction
 
 from .matching import DayFIFOSummary
-from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot
+from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot, TradeMatchedLot
 
 
 ZERO = Decimal('0')
@@ -68,6 +68,7 @@ def rebuild_all_trade_groups():
     )
 
     TradeLotSnapshot.objects.all().delete()
+    TradeMatchedLot.objects.all().delete()
     TradeGroup.objects.all().delete()
 
     if not fills:
@@ -106,13 +107,13 @@ def rebuild_all_trade_groups():
                     'had_buy': False,
                     'had_sell': False,
                     'lot_snapshots': [],
+                    'matched_lots': [],
                 }
 
             match_info = matcher.apply_fill(fill)
             raw_realized = None
             if getattr(fill, 'raw_execution', None) is not None and fill.raw_execution.realized_pnl is not None:
                 raw_realized = _to_decimal(fill.raw_execution.realized_pnl)
-
             if raw_realized is not None and match_info['closed_qty'] > ZERO:
                 realized_delta = raw_realized
             else:
@@ -136,6 +137,30 @@ def rebuild_all_trade_groups():
                 current_bucket['had_sell'] = True
                 current_bucket['total_sell_qty'] += qty
                 current_bucket['sell_notional'] += qty * price
+
+            closed_qty = _to_decimal(match_info.get('closed_qty'))
+            for closed_lot in (match_info.get('closed_lots') or []):
+                matched_qty = _to_decimal(closed_lot.get('matched_qty'))
+                if matched_qty <= ZERO:
+                    continue
+                if raw_realized is not None and closed_qty > ZERO:
+                    lot_realized = raw_realized * (matched_qty / closed_qty)
+                else:
+                    lot_realized = _to_decimal(closed_lot.get('realized_pnl'))
+                lot_side = (closed_lot.get('lot_side') or '').upper()
+                current_bucket['matched_lots'].append(
+                    {
+                        'symbol': symbol,
+                        'side': lot_side,
+                        'matched_qty': matched_qty,
+                        'open_price': _to_decimal(closed_lot.get('open_price')),
+                        'close_price': _to_decimal(closed_lot.get('close_price')),
+                        'realized_pnl': lot_realized,
+                        'commission_total': _to_decimal(closed_lot.get('entry_commission')) + _to_decimal(closed_lot.get('exit_commission')),
+                        'opened_at': closed_lot.get('opened_at') or fill.executed_at,
+                        'closed_at': fill.executed_at,
+                    }
+                )
 
             open_qty = matcher.get_open_qty()
             current_bucket['open_qty'] = open_qty
@@ -166,51 +191,19 @@ def rebuild_all_trade_groups():
         if current_bucket is not None:
             lifecycle_buckets.append(current_bucket)
 
-    merged_buckets = {}
     for bucket in sorted(
         lifecycle_buckets,
         key=lambda item: (
-            item['closed_at'].date() if item['closed_at'] else item['opened_at'].date(),
+            item['closed_at'] or item['last_fill_at'] or item['opened_at'],
             item['symbol'],
             item['opened_at'],
         ),
     ):
-        group_trade_date = bucket['closed_at'].date() if bucket['closed_at'] else bucket['opened_at'].date()
-        merge_key = (bucket['symbol'], group_trade_date)
-
-        existing = merged_buckets.get(merge_key)
-        if existing is None:
-            merged_buckets[merge_key] = {
-                **bucket,
-                'trade_date': group_trade_date,
-                'lot_snapshots': list(bucket['lot_snapshots']),
-            }
-            continue
-
-        existing['asset_class'] = existing.get('asset_class') or bucket.get('asset_class')
-        existing['total_buy_qty'] += bucket['total_buy_qty']
-        existing['total_sell_qty'] += bucket['total_sell_qty']
-        existing['buy_notional'] += bucket['buy_notional']
-        existing['sell_notional'] += bucket['sell_notional']
-        existing['net_qty'] += bucket['net_qty']
-        existing['realized_pnl'] += bucket['realized_pnl']
-        existing['commission_total'] += bucket['commission_total']
-        existing['opened_at'] = min(existing['opened_at'], bucket['opened_at'])
-        existing['last_fill_at'] = max(existing['last_fill_at'], bucket['last_fill_at'])
-
-        if bucket['closed_at'] is not None:
-            if existing['closed_at'] is None:
-                existing['closed_at'] = bucket['closed_at']
-            else:
-                existing['closed_at'] = max(existing['closed_at'], bucket['closed_at'])
-
-        existing['open_qty'] = bucket['open_qty']
-        existing['avg_open_cost'] = bucket['avg_open_cost']
-        existing['direction'] = bucket['direction']
-        existing['status'] = bucket['status']
-        existing['lot_snapshots'] = list(bucket['lot_snapshots'])
-
-    for bucket in merged_buckets.values():
+        group_trade_date = (
+            bucket['closed_at'].date()
+            if bucket['closed_at']
+            else bucket['opened_at'].date()
+        )
         avg_buy_price = None
         if bucket['total_buy_qty'] > ZERO:
             avg_buy_price = bucket['buy_notional'] / bucket['total_buy_qty']
@@ -221,7 +214,7 @@ def rebuild_all_trade_groups():
 
         group = TradeGroup.objects.create(
             symbol=bucket['symbol'],
-            trade_date=bucket['trade_date'],
+            trade_date=group_trade_date,
             asset_class=bucket['asset_class'],
             direction=bucket['direction'],
             status=bucket['status'],
@@ -251,5 +244,25 @@ def rebuild_all_trade_groups():
                         opened_at=snapshot['opened_at'] or group.opened_at,
                     )
                     for snapshot in snapshots
+                ]
+            )
+
+        matched_lots = bucket.get('matched_lots') or []
+        if matched_lots:
+            TradeMatchedLot.objects.bulk_create(
+                [
+                    TradeMatchedLot(
+                        trade_group=group,
+                        symbol=lot['symbol'],
+                        side=lot['side'],
+                        matched_qty=lot['matched_qty'],
+                        open_price=lot['open_price'],
+                        close_price=lot['close_price'],
+                        realized_pnl=lot['realized_pnl'],
+                        commission_total=lot['commission_total'],
+                        opened_at=lot['opened_at'],
+                        closed_at=lot['closed_at'],
+                    )
+                    for lot in matched_lots
                 ]
             )

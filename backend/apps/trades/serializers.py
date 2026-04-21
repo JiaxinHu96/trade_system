@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db import connection
-from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot
+from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot, TradeMatchedLot
 from apps.journal.models import DailyReview
 
 
@@ -32,8 +32,15 @@ class TradeLotSnapshotSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class TradeMatchedLotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TradeMatchedLot
+        fields = '__all__'
+
+
 class TradeGroupSerializer(serializers.ModelSerializer):
     lot_snapshots = TradeLotSnapshotSerializer(many=True, read_only=True)
+    matched_lots = TradeMatchedLotSerializer(many=True, read_only=True)
     raw_executions = serializers.SerializerMethodField()
     fills = serializers.SerializerMethodField()
     linked_daily_reviews = serializers.SerializerMethodField()

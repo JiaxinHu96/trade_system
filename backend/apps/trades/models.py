@@ -93,3 +93,17 @@ class TradeLotSnapshot(models.Model):
     open_price = models.DecimalField(max_digits=20, decimal_places=8)
     opened_at = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class TradeMatchedLot(models.Model):
+    trade_group = models.ForeignKey(TradeGroup, on_delete=models.CASCADE, related_name='matched_lots')
+    symbol = models.CharField(max_length=64)
+    side = models.CharField(max_length=8, blank=True, null=True)
+    matched_qty = models.DecimalField(max_digits=20, decimal_places=6)
+    open_price = models.DecimalField(max_digits=20, decimal_places=8)
+    close_price = models.DecimalField(max_digits=20, decimal_places=8)
+    realized_pnl = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    commission_total = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    opened_at = models.DateTimeField(blank=True, null=True)
+    closed_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
