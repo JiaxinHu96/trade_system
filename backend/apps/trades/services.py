@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from decimal import Decimal
 
+from django.db import connection
 from django.db import transaction
 
 from .matching import DayFIFOSummary
@@ -18,6 +19,11 @@ def _to_decimal(value, default: str = '0') -> Decimal:
     if isinstance(value, Decimal):
         return value
     return Decimal(str(value))
+
+
+def _has_trade_matched_lot_table():
+    with connection.cursor() as cursor:
+        return TradeMatchedLot._meta.db_table in connection.introspection.table_names(cursor)
 
 
 @transaction.atomic
@@ -67,8 +73,11 @@ def rebuild_all_trade_groups():
         .order_by('symbol', 'asset_class', 'executed_at', 'id')
     )
 
+    has_matched_lot_table = _has_trade_matched_lot_table()
+
     TradeLotSnapshot.objects.all().delete()
-    TradeMatchedLot.objects.all().delete()
+    if has_matched_lot_table:
+        TradeMatchedLot.objects.all().delete()
     TradeGroup.objects.all().delete()
 
     if not fills:
@@ -248,7 +257,7 @@ def rebuild_all_trade_groups():
             )
 
         matched_lots = bucket.get('matched_lots') or []
-        if matched_lots:
+        if matched_lots and has_matched_lot_table:
             TradeMatchedLot.objects.bulk_create(
                 [
                     TradeMatchedLot(

@@ -14,6 +14,11 @@ def _daily_review_has_strategy_column():
     return 'strategy' in columns
 
 
+def _trade_matched_lot_table_exists():
+    with connection.cursor() as cursor:
+        return TradeMatchedLot._meta.db_table in connection.introspection.table_names(cursor)
+
+
 class RawIBKRExecutionSerializer(serializers.ModelSerializer):
     class Meta:
         model = RawIBKRExecution
@@ -48,6 +53,11 @@ class TradeGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = TradeGroup
         fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not _trade_matched_lot_table_exists():
+            self.fields.pop('matched_lots', None)
 
     def _group_executions_queryset(self, obj):
         qs = RawIBKRExecution.objects.filter(symbol=obj.symbol)
