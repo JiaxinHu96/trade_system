@@ -3,105 +3,190 @@
     <div class="dashboard-hero card compact-header-card">
       <div>
         <div class="dashboard-kicker">Trading Journal</div>
-        <h1 class="dashboard-title">Journal</h1>
-        <p class="dashboard-subtitle">升级为三层复盘：日内总复盘 + 多笔 Trade Reviews + 持仓 checkpoint。</p>
+        <h1 class="dashboard-title">Review Queue</h1>
+        <p class="dashboard-subtitle">自动待复盘：已平仓卡片 + 持仓checkpoint + 当日日复盘总表。</p>
       </div>
     </div>
 
-    <div class="journal-layout journal-layout-wide journal-shell">
-      <section class="card journal-form-card journal-surface">
-        <div class="section-title">{{ editingId ? 'Edit Daily Review' : 'New Daily Review' }}</div>
-        <div class="journal-form-grid">
-          <label class="journal-date-field"><span>Date</span><input ref="dateInputRef" v-model="form.review_date" type="date" @change="loadTradeOptions" /></label>
-          <label><span>Market Regime</span><input v-model="form.market_regime" placeholder="trend / range / breakout" /></label>
-          <label><span>Daily Bias</span><input v-model="form.daily_bias" placeholder="bullish / neutral / bearish" /></label>
+    <section class="card">
+      <div class="journal-form-grid">
+        <label><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" /></label>
+        <div><span class="stat-label">Closed trades</span><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
+        <div><span class="stat-label">Open positions</span><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
+        <div><span class="stat-label">Daily review</span><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
+      </div>
+    </section>
+
+    <section class="card journal-form-card">
+      <div class="section-title">Daily Session Review（总表）</div>
+      <div class="journal-form-grid">
+        <label><span>Market Regime</span><input v-model="form.market_regime" /></label>
+        <label><span>Daily Bias</span><input v-model="form.daily_bias" /></label>
+        <label><span>Strategy</span><input v-model="form.strategy" /></label>
+      </div>
+      <div class="journal-text-grid">
+        <label><span>Market Summary</span><textarea v-model="form.market_summary" rows="3"></textarea></label>
+        <label><span>Biggest Mistake</span><textarea v-model="form.biggest_mistake" rows="3"></textarea></label>
+        <label><span>Main Lesson</span><textarea v-model="form.lessons" rows="3"></textarea></label>
+        <label><span>Tomorrow Plan</span><textarea v-model="form.next_day_plan" rows="3"></textarea></label>
+      </div>
+      <div class="filter-action-row"><button @click="saveDailyReview" :disabled="savingDaily">{{ savingDaily ? 'Saving...' : 'Save Daily Review' }}</button></div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">Trade Review Cards（单笔复盘）</div>
+      <div v-if="!queue.closed_trades?.length" class="empty-row">No closed trades for this day.</div>
+      <div v-for="card in queue.closed_trades" :key="card.trade_group_id" class="journal-entry-card" style="margin-bottom:12px;">
+        <div class="journal-entry-head">
+          <div>
+            <strong>{{ card.symbol }}</strong>
+            <div class="muted-copy">PnL {{ card.realized_pnl }} · Hold {{ card.hold_minutes || '-' }}m · {{ card.status }}</div>
+            <div class="muted-copy">Execs {{ card.executions_count }} · Screenshots {{ card.screenshots_count }} · 完整度 {{ card.review_completeness }}%</div>
+          </div>
+          <button class="secondary small-btn" @click="toggleCard(card.trade_group_id)">{{ expandedCards.includes(card.trade_group_id) ? '收起' : '复盘' }}</button>
         </div>
 
-        <div class="journal-linked-trade-block">
-          <div class="section-title minor">Linked Trade Groups (multi-select)</div>
-          <div class="journal-linked-trade-options">
-            <button v-for="option in tradeOptions" :key="option.id" type="button" :class="['trade-option-chip', { active: form.related_trade_groups.includes(option.id) }]" @click="toggleTradeGroup(option.id)">
-              <strong>{{ option.symbol }}</strong><span>{{ option.status }}</span><span>PnL {{ option.realized_pnl }}</span>
-            </button>
+        <div v-if="expandedCards.includes(card.trade_group_id)" class="accordion-body">
+          <div class="journal-form-grid">
+            <label><span>Setup ID</span><input v-model.number="tradeReviewForms[card.trade_group_id].setup" type="number" min="1" /></label>
+            <label><span>Entry quality</span><input v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" type="number" min="1" max="5" /></label>
+            <label><span>Exit quality</span><input v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" type="number" min="1" max="5" /></label>
+            <label><span>Final grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
+          </div>
+          <label><span>Thesis</span><textarea v-model="tradeReviewForms[card.trade_group_id].thesis" rows="2"></textarea></label>
+          <label><span>Mistake tags (comma IDs)</span><input v-model="mistakeInputs[card.trade_group_id]" placeholder="1,2" /></label>
+          <label><span>What to improve</span><textarea v-model="tradeReviewForms[card.trade_group_id].what_to_improve" rows="2"></textarea></label>
+          <div class="filter-action-row">
+            <button @click="saveCardReview(card.trade_group_id)" :disabled="savingTrade === card.trade_group_id">{{ savingTrade === card.trade_group_id ? 'Saving...' : 'Save Trade Review' }}</button>
+            <router-link class="inline-link" :to="`/trades/${card.trade_group_id}`">Open Detail</router-link>
           </div>
         </div>
+      </div>
+    </section>
 
-        <div class="journal-text-grid">
-          <label class="journal-strategy-row"><span>Strategy</span><select v-model="form.strategy" class="compact-strategy-select"><option value="">Select strategy</option><option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option></select></label>
-          <label><span>Key levels / catalyst</span><textarea v-model="form.key_levels_catalyst" rows="3"></textarea></label>
-          <label><span>Watchlist</span><textarea v-model="form.watchlist" rows="3"></textarea></label>
-          <label><span>Market Summary</span><textarea v-model="form.market_summary" rows="3"></textarea></label>
-          <label><span>Biggest Mistake</span><textarea v-model="form.biggest_mistake" rows="3"></textarea></label>
-          <label><span>Main Lesson</span><textarea v-model="form.lessons" rows="3"></textarea></label>
-          <label><span>Tomorrow Plan</span><textarea v-model="form.next_day_plan" rows="3"></textarea></label>
-        </div>
-
-        <div class="journal-form-grid">
-          <label><span>Discipline (1-10)</span><input v-model.number="form.discipline_score" type="number" min="1" max="10" /></label>
-          <label><span>Emotional Control (1-10)</span><input v-model.number="form.emotional_control_score" type="number" min="1" max="10" /></label>
-          <label><span>Max Daily Loss Respected?</span><select v-model="maxLossSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
-        </div>
-
-        <label><span>Review Images</span><div class="helper-row"><input type="file" accept="image/*" multiple @change="handleFileUpload" /><button type="button" class="secondary" @click="clearImages">Clear Images</button></div></label>
-        <div v-if="form.image_urls.length" class="image-grid compact-image-grid">
-          <div v-for="(url, idx) in form.image_urls" :key="url" class="image-tile"><img :src="url" alt="review preview" class="image-preview" /><button type="button" class="secondary small-btn" @click="removeImage(idx)">Remove</button></div>
-        </div>
-        <div class="filter-action-row"><button @click="submitReview" :disabled="loading || uploading">{{ savingLabel }}</button><button v-if="editingId" class="secondary" @click="cancelEdit">Cancel</button></div>
-      </section>
-
-      <section class="card journal-list-card journal-surface">
-        <div class="section-title">Daily Review Timeline</div>
-        <div v-for="item in reviews" :key="item.id" class="journal-entry-card accordion tv-journal-card">
-          <button class="journal-entry-head accordion-trigger" @click="toggleReview(item.id)">
-            <div><div class="review-date">{{ item.review_date }}</div><div class="review-linked-trade">{{ (item.related_trade_groups_display || []).map(t => t.symbol).join(', ') || 'No linked trades' }}</div></div>
-            <span class="accordion-indicator">{{ expandedReviewIds.includes(item.id) ? '−' : '+' }}</span>
-          </button>
-          <div v-if="expandedReviewIds.includes(item.id)" class="accordion-body">
-            <div class="journal-entry-grid">
-              <div><strong>Regime/Bias</strong><div class="journal-entry-content">{{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }}</div></div>
-              <div><strong>Summary</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.market_summary || '-'"></textarea></div>
-            </div>
-            <div class="journal-inline-actions"><button class="secondary small-btn" @click="editReview(item)">Edit</button><button class="secondary small-btn" @click="removeReview(item.id)">Delete</button></div>
-          </div>
-        </div>
-      </section>
-    </div>
+    <section class="card">
+      <div class="section-title">Open Positions（checkpoint 待写）</div>
+      <div v-if="!queue.open_positions?.length" class="empty-row">No open positions.</div>
+      <div v-for="item in queue.open_positions" :key="item.trade_group_id" class="review-item">
+        <strong>{{ item.symbol }}</strong> · Open Qty {{ item.open_qty }} · Latest checkpoint: {{ item.latest_checkpoint_date || 'none' }}
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
-import { createDailyReview, updateDailyReview, deleteDailyReview, fetchDailyReviews, fetchDailyReviewTradeOptions, uploadDailyReviewImages } from '../api/journal'
-import { fetchStrategyOptions } from '../api/common'
+import { onMounted, ref } from 'vue'
+import { createDailyReview, fetchReviewQueue, saveTradeReview } from '../api/journal'
 
-const loading = ref(false)
-const uploading = ref(false)
-const reviews = ref([])
-const tradeOptions = ref([])
-const strategyOptions = ref([])
-const expandedReviewIds = ref([])
-const editingId = ref(null)
-const dateInputRef = ref(null)
-const freshForm = () => ({ review_date: new Date().toISOString().slice(0, 10), related_trade_groups: [], image_urls: [], strategy: '', market_summary: '', lessons: '', next_day_plan: '', market_regime: '', key_levels_catalyst: '', watchlist: '', daily_bias: '', max_daily_loss_respected: null, discipline_score: null, emotional_control_score: null, biggest_mistake: '' })
-const form = ref(freshForm())
-const maxLossSelection = ref('')
+const queueDate = ref(new Date().toISOString().slice(0, 10))
+const queue = ref({ summary: {}, closed_trades: [], open_positions: [] })
+const expandedCards = ref([])
+const tradeReviewForms = ref({})
+const mistakeInputs = ref({})
+const savingTrade = ref(null)
+const savingDaily = ref(false)
 
-watch(maxLossSelection, (value) => { form.value.max_daily_loss_respected = value === '' ? null : value === 'true' })
-const savingLabel = computed(() => (loading.value ? (editingId.value ? 'Updating...' : 'Saving...') : uploading.value ? 'Uploading...' : editingId.value ? 'Update Review' : 'Save Review'))
-const activeStrategyOptions = computed(() => strategyOptions.value.filter((item) => item.is_active))
+const form = ref({
+  review_date: queueDate.value,
+  strategy: '',
+  market_regime: '',
+  daily_bias: '',
+  market_summary: '',
+  biggest_mistake: '',
+  lessons: '',
+  next_day_plan: '',
+  related_trade_groups: [],
+})
 
-function toggleTradeGroup(id) { const set = new Set(form.value.related_trade_groups); if (set.has(id)) set.delete(id); else set.add(id); form.value.related_trade_groups = Array.from(set) }
-async function loadReviews() { const res = await fetchDailyReviews({ page_size: 100 }); reviews.value = res.data.results || [] }
-async function loadStrategyOptions() { try { const res = await fetchStrategyOptions(); strategyOptions.value = (res.data?.results || res.data || []).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name)) } catch { strategyOptions.value = [] } }
-async function loadTradeOptions() { if (!form.value.review_date) return; const res = await fetchDailyReviewTradeOptions(form.value.review_date); tradeOptions.value = res.data || [] }
-async function handleFileUpload(event) { const files = event.target.files; if (!files?.length) return; uploading.value = true; try { const res = await uploadDailyReviewImages(files); const urls = res.data.image_urls || (res.data.image_url ? [res.data.image_url] : []); form.value.image_urls = [...form.value.image_urls, ...urls] } finally { uploading.value = false; event.target.value = '' } }
-function clearImages() { form.value.image_urls = [] }
-function removeImage(idx) { form.value.image_urls.splice(idx, 1) }
-function toggleReview(id) { expandedReviewIds.value = expandedReviewIds.value.includes(id) ? expandedReviewIds.value.filter(v => v !== id) : [...expandedReviewIds.value, id] }
-function editReview(item) { editingId.value = item.id; form.value = { ...freshForm(), ...item, related_trade_groups: (item.related_trade_groups || []).slice(), image_urls: (item.images || []).map(img => img.image_url) }; maxLossSelection.value = item.max_daily_loss_respected == null ? '' : String(item.max_daily_loss_respected); loadTradeOptions() }
-function cancelEdit() { editingId.value = null; form.value = freshForm(); maxLossSelection.value = ''; loadTradeOptions() }
-async function removeReview(id) { if (!window.confirm('Delete this review?')) return; await deleteDailyReview(id); if (editingId.value === id) cancelEdit(); await loadReviews() }
-async function submitReview() { loading.value = true; try { if (editingId.value) await updateDailyReview(editingId.value, form.value); else await createDailyReview(form.value); cancelEdit(); await loadReviews() } finally { loading.value = false } }
+function toggleCard(id) {
+  expandedCards.value = expandedCards.value.includes(id)
+    ? expandedCards.value.filter((v) => v !== id)
+    : [...expandedCards.value, id]
+}
 
-onMounted(async () => { await loadStrategyOptions(); await loadTradeOptions(); await loadReviews() })
+function hydrateCardForms(cards) {
+  const next = {}
+  const mistakes = {}
+  cards.forEach((card) => {
+    const review = card.trade_review || {}
+    next[card.trade_group_id] = {
+      trade_group: card.trade_group_id,
+      setup: review.setup || null,
+      thesis: review.thesis || '',
+      entry_quality: review.entry_quality,
+      exit_quality: review.exit_quality,
+      what_to_improve: review.what_to_improve || '',
+      final_grade: review.final_grade || '',
+      mistake_tags: review.mistake_tags || [],
+    }
+    mistakes[card.trade_group_id] = (review.mistake_tags || []).join(',')
+  })
+  tradeReviewForms.value = next
+  mistakeInputs.value = mistakes
+}
+
+function hydrateDailyReview(dailyReview) {
+  if (!dailyReview) {
+    form.value = {
+      review_date: queueDate.value,
+      strategy: '',
+      market_regime: '',
+      daily_bias: '',
+      market_summary: '',
+      biggest_mistake: '',
+      lessons: '',
+      next_day_plan: '',
+      related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id),
+    }
+    return
+  }
+
+  form.value = {
+    review_date: queueDate.value,
+    strategy: dailyReview.strategy || '',
+    market_regime: dailyReview.market_regime || '',
+    daily_bias: dailyReview.daily_bias || '',
+    market_summary: dailyReview.market_summary || '',
+    biggest_mistake: dailyReview.biggest_mistake || '',
+    lessons: dailyReview.lessons || '',
+    next_day_plan: dailyReview.next_day_plan || '',
+    related_trade_groups: (dailyReview.related_trade_groups || []).length
+      ? dailyReview.related_trade_groups
+      : queue.value.closed_trades.map((item) => item.trade_group_id),
+  }
+}
+
+async function loadQueue() {
+  const res = await fetchReviewQueue(queueDate.value)
+  queue.value = res.data || { summary: {}, closed_trades: [], open_positions: [] }
+  hydrateCardForms(queue.value.closed_trades || [])
+  hydrateDailyReview(queue.value.daily_review)
+}
+
+async function saveCardReview(tradeGroupId) {
+  savingTrade.value = tradeGroupId
+  try {
+    const payload = { ...tradeReviewForms.value[tradeGroupId] }
+    payload.mistake_tags = (mistakeInputs.value[tradeGroupId] || '')
+      .split(',')
+      .map((item) => Number(item.trim()))
+      .filter(Boolean)
+    await saveTradeReview(payload)
+    await loadQueue()
+  } finally {
+    savingTrade.value = null
+  }
+}
+
+async function saveDailyReview() {
+  savingDaily.value = true
+  try {
+    await createDailyReview({ ...form.value, review_date: queueDate.value })
+    await loadQueue()
+  } finally {
+    savingDaily.value = false
+  }
+}
+
+onMounted(loadQueue)
 </script>

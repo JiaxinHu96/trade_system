@@ -1,5 +1,7 @@
 from pathlib import Path
 import uuid
+from decimal import Decimal
+from datetime import datetime
 
 from django.conf import settings
 from django.db.models import Q
@@ -10,6 +12,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.trades.models import RawIBKRExecution
 from apps.trades.models import TradeGroup
 from .models import DailyReview, PositionCheckpoint, TradeJournal, TradeReview
 from .serializers import (
@@ -45,10 +48,103 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
         if not payload.get('review_date'):
             payload['review_date'] = timezone.localdate().isoformat()
 
+        existing = DailyReview.objects.filter(review_date=payload['review_date']).first()
+        if existing:
+            serializer = self.get_serializer(existing, data=payload, partial=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
         serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='review-queue')
+    def review_queue(self, request):
+        selected_date = request.query_params.get('date') or timezone.localdate().isoformat()
+        closed_trades = TradeGroup.objects.filter(
+            Q(closed_at__date=selected_date) | Q(trade_date=selected_date, status='closed'),
+            status='closed',
+        ).order_by('closed_at', 'id')
+        open_positions = TradeGroup.objects.filter(
+            Q(opened_at__date__lte=selected_date) | Q(trade_date__lte=selected_date),
+        ).exclude(open_qty=Decimal('0')).order_by('opened_at', 'id')
+
+        daily_review = DailyReview.objects.filter(review_date=selected_date).first()
+
+        def _hold_minutes(group):
+            if not group.opened_at or not group.closed_at:
+                return None
+            return round((group.closed_at - group.opened_at).total_seconds() / 60, 2)
+
+        def _review_completeness(review):
+            if not review:
+                return 0
+            checks = [
+                bool(review.setup_id),
+                bool(review.thesis),
+                review.entry_quality is not None,
+                review.exit_quality is not None,
+                review.risk_management is not None,
+                bool(review.what_i_did_well),
+                bool(review.what_to_improve),
+                bool(review.final_grade),
+            ]
+            return int(round((sum(checks) / len(checks)) * 100))
+
+        closed_trade_cards = []
+        for group in closed_trades:
+            trade_review = getattr(group, 'trade_review', None)
+            executions_qs = RawIBKRExecution.objects.filter(symbol=group.symbol)
+            if group.opened_at:
+                executions_qs = executions_qs.filter(executed_at__gte=group.opened_at)
+            else:
+                executions_qs = executions_qs.filter(executed_at__gte=timezone.make_aware(datetime.min))
+            if group.closed_at:
+                executions_qs = executions_qs.filter(executed_at__lte=group.closed_at)
+            else:
+                executions_qs = executions_qs.filter(executed_at__lte=timezone.now())
+            executions_count = executions_qs.count()
+            closed_trade_cards.append({
+                'trade_group_id': group.id,
+                'symbol': group.symbol,
+                'status': group.status,
+                'realized_pnl': group.realized_pnl,
+                'hold_minutes': _hold_minutes(group),
+                'executions_count': executions_count,
+                'screenshots_count': len(trade_review.screenshots or []) if trade_review else 0,
+                'review_completeness': _review_completeness(trade_review),
+                'has_review': bool(trade_review),
+                'trade_review': TradeReviewSerializer(trade_review).data if trade_review else None,
+            })
+
+        open_position_cards = []
+        for group in open_positions:
+            latest_checkpoint = group.position_checkpoints.first()
+            open_position_cards.append({
+                'trade_group_id': group.id,
+                'symbol': group.symbol,
+                'status': group.status,
+                'open_qty': group.open_qty,
+                'opened_at': group.opened_at,
+                'latest_checkpoint_id': latest_checkpoint.id if latest_checkpoint else None,
+                'latest_checkpoint_date': latest_checkpoint.review_date if latest_checkpoint else None,
+            })
+
+        summary = {
+            'closed_trade_count': len(closed_trade_cards),
+            'open_position_count': len(open_position_cards),
+            'daily_review_completed': bool(daily_review),
+        }
+
+        return Response({
+            'date': selected_date,
+            'summary': summary,
+            'daily_review': DailyReviewSerializer(daily_review).data if daily_review else None,
+            'closed_trades': closed_trade_cards,
+            'open_positions': open_position_cards,
+        })
 
     @action(detail=False, methods=['get'], url_path='trade-options')
     def trade_options(self, request):
