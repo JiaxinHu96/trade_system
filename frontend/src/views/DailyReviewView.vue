@@ -8,6 +8,14 @@
       </div>
     </div>
 
+    <section class="card tv-tabbed-panel tv-tabbed-panel-compact">
+      <div class="tv-panel-tabs">
+        <button :class="['tv-subtab', { active: journalTab === 'workspace' }]" @click="journalTab='workspace'">Review Workspace</button>
+        <button :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="openTimelineTab">Journal Timeline</button>
+      </div>
+    </section>
+
+    <template v-if="journalTab === 'workspace'">
     <section class="card">
       <div class="journal-form-grid">
         <label><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" /></label>
@@ -128,12 +136,18 @@
         </div>
       </div>
     </section>
+    </template>
 
-    <section class="card">
+    <section v-else class="card">
       <div class="section-title">Journal Timeline</div>
+      <div class="journal-form-grid">
+        <label><span>Date From</span><input v-model="timelineDateFrom" type="date" @change="loadTimeline" /></label>
+        <label><span>Date To</span><input v-model="timelineDateTo" type="date" @change="loadTimeline" /></label>
+        <button class="secondary" @click="loadTimeline">Refresh</button>
+      </div>
       <div v-if="!dailyTimeline.length" class="empty-row">No daily reviews yet.</div>
       <div v-for="item in dailyTimeline" :key="item.id" class="review-item">
-        <strong>{{ item.review_date }}</strong> · {{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }} · {{ item.market_summary || '-' }}
+        <strong>{{ item.review_date }}</strong> · {{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }} · {{ item.market_summary || '-' }} · Trades {{ (item.related_trade_groups_display || []).map((t) => t.symbol).join(', ') || '-' }}
       </div>
     </section>
   </div>
@@ -152,6 +166,7 @@ import {
 } from '../api/journal'
 
 const queueDate = ref(new Date().toISOString().slice(0, 10))
+const journalTab = ref('workspace')
 const queue = ref({ summary: {}, closed_trades: [], open_positions: [] })
 const dailyAccordion = ref('context')
 const expandedCards = ref([])
@@ -168,6 +183,8 @@ const tradeSectionRef = ref(null)
 const dailySectionRef = ref(null)
 const positionSectionRef = ref(null)
 const dailyTimeline = ref([])
+const timelineDateFrom = ref('')
+const timelineDateTo = ref('')
 
 const form = ref({ review_date: queueDate.value, strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [] })
 
@@ -272,8 +289,19 @@ async function loadQueue() {
   hydrateCardForms(queue.value.closed_trades || [])
   hydratePositionForms(queue.value.open_positions || [])
   hydrateDailyReview(queue.value.daily_review)
-  const timelineRes = await fetchDailyReviews({ page_size: 10 })
+}
+
+async function loadTimeline() {
+  const params = { page_size: 20 }
+  if (timelineDateFrom.value) params.date_from = timelineDateFrom.value
+  if (timelineDateTo.value) params.date_to = timelineDateTo.value
+  const timelineRes = await fetchDailyReviews(params)
   dailyTimeline.value = timelineRes.data?.results || []
+}
+
+async function openTimelineTab() {
+  journalTab.value = 'timeline'
+  if (!dailyTimeline.value.length) await loadTimeline()
 }
 
 async function saveCardReview(tradeGroupId) {
@@ -323,6 +351,7 @@ function focusFirstPending() {
 onMounted(async () => {
   await loadMetaTags()
   await loadQueue()
+  await loadTimeline()
   nextTick(() => focusFirstPending())
 })
 </script>
