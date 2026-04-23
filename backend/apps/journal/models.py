@@ -37,6 +37,12 @@ class DailyReview(models.Model):
     discipline_score = models.PositiveSmallIntegerField(null=True, blank=True)
     emotional_control_score = models.PositiveSmallIntegerField(null=True, blank=True)
     biggest_mistake = models.TextField(blank=True, default='')
+    session = models.CharField(max_length=32, blank=True, default='')
+    market_condition = models.CharField(max_length=32, blank=True, default='')
+    confidence_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    rule_followed = models.BooleanField(null=True, blank=True)
+    trade_quality_grade = models.CharField(max_length=4, blank=True, default='')
+    would_take_again = models.BooleanField(null=True, blank=True)
     related_trade_group = models.ForeignKey(
         'trades.TradeGroup',
         on_delete=models.SET_NULL,
@@ -44,6 +50,7 @@ class DailyReview(models.Model):
         null=True,
         blank=True,
     )
+    mistake_tags = models.ManyToManyField('MistakeTag', blank=True, related_name='daily_reviews')
     related_trade_groups = models.ManyToManyField(
         'trades.TradeGroup',
         related_name='daily_review_links',

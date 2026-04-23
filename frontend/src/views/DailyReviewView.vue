@@ -23,12 +23,19 @@
         <label><span>Market Regime</span><input v-model="form.market_regime" /></label>
         <label><span>Daily Bias</span><input v-model="form.daily_bias" /></label>
         <label><span>Strategy</span><input v-model="form.strategy" /></label>
+        <label><span>Session</span><select v-model="form.session"><option value="">-</option><option>open</option><option>midday</option><option>close</option><option>overnight</option></select></label>
+        <label><span>Market condition</span><select v-model="form.market_condition"><option value="">-</option><option>trend</option><option>range</option><option>breakout</option><option>reversal</option><option>news</option></select></label>
+        <label><span>Confidence (1-10)</span><input v-model.number="form.confidence_score" type="number" min="1" max="10" /></label>
+        <label><span>Rule followed</span><select v-model="ruleFollowedSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
+        <label><span>Trade grade</span><select v-model="form.trade_quality_grade"><option value="">-</option><option>A+</option><option>A</option><option>B</option><option>C</option></select></label>
+        <label><span>Would take again</span><select v-model="wouldTakeAgainSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
       </div>
       <div class="journal-text-grid">
         <label><span>Market Summary</span><textarea v-model="form.market_summary" rows="3"></textarea></label>
         <label><span>Biggest Mistake</span><textarea v-model="form.biggest_mistake" rows="3"></textarea></label>
         <label><span>Main Lesson</span><textarea v-model="form.lessons" rows="3"></textarea></label>
         <label><span>Tomorrow Plan</span><textarea v-model="form.next_day_plan" rows="3"></textarea></label>
+        <label><span>Mistake tags (comma IDs)</span><input v-model="dailyMistakeInput" placeholder="1,2" /></label>
       </div>
       <div class="filter-action-row"><button @click="saveDailyReview" :disabled="savingDaily">{{ savingDaily ? 'Saving...' : 'Save Daily Review' }}</button></div>
     </section>
@@ -85,6 +92,9 @@ const tradeReviewForms = ref({})
 const mistakeInputs = ref({})
 const savingTrade = ref(null)
 const savingDaily = ref(false)
+const ruleFollowedSelection = ref('')
+const wouldTakeAgainSelection = ref('')
+const dailyMistakeInput = ref('')
 
 const form = ref({
   review_date: queueDate.value,
@@ -96,6 +106,13 @@ const form = ref({
   lessons: '',
   next_day_plan: '',
   related_trade_groups: [],
+  session: '',
+  market_condition: '',
+  confidence_score: null,
+  rule_followed: null,
+  trade_quality_grade: '',
+  would_take_again: null,
+  mistake_tags: [],
 })
 
 function toggleCard(id) {
@@ -137,7 +154,17 @@ function hydrateDailyReview(dailyReview) {
       lessons: '',
       next_day_plan: '',
       related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id),
+      session: '',
+      market_condition: '',
+      confidence_score: null,
+      rule_followed: null,
+      trade_quality_grade: '',
+      would_take_again: null,
+      mistake_tags: [],
     }
+    ruleFollowedSelection.value = ''
+    wouldTakeAgainSelection.value = ''
+    dailyMistakeInput.value = ''
     return
   }
 
@@ -153,7 +180,17 @@ function hydrateDailyReview(dailyReview) {
     related_trade_groups: (dailyReview.related_trade_groups || []).length
       ? dailyReview.related_trade_groups
       : queue.value.closed_trades.map((item) => item.trade_group_id),
+    session: dailyReview.session || '',
+    market_condition: dailyReview.market_condition || '',
+    confidence_score: dailyReview.confidence_score,
+    rule_followed: dailyReview.rule_followed ?? null,
+    trade_quality_grade: dailyReview.trade_quality_grade || '',
+    would_take_again: dailyReview.would_take_again ?? null,
+    mistake_tags: dailyReview.mistake_tags || [],
   }
+  ruleFollowedSelection.value = dailyReview.rule_followed == null ? '' : String(dailyReview.rule_followed)
+  wouldTakeAgainSelection.value = dailyReview.would_take_again == null ? '' : String(dailyReview.would_take_again)
+  dailyMistakeInput.value = (dailyReview.mistake_tags || []).join(',')
 }
 
 async function loadQueue() {
@@ -181,7 +218,14 @@ async function saveCardReview(tradeGroupId) {
 async function saveDailyReview() {
   savingDaily.value = true
   try {
-    await createDailyReview({ ...form.value, review_date: queueDate.value })
+    const payload = { ...form.value, review_date: queueDate.value }
+    payload.rule_followed = ruleFollowedSelection.value === '' ? null : ruleFollowedSelection.value === 'true'
+    payload.would_take_again = wouldTakeAgainSelection.value === '' ? null : wouldTakeAgainSelection.value === 'true'
+    payload.mistake_tags = (dailyMistakeInput.value || '')
+      .split(',')
+      .map((item) => Number(item.trim()))
+      .filter(Boolean)
+    await createDailyReview(payload)
     await loadQueue()
   } finally {
     savingDaily.value = false
