@@ -19,8 +19,8 @@
         <option value="STK">STK</option>
         <option value="FUT">FUT</option>
       </select>
-      <input v-model="filters.date_from" type="date" />
-      <input v-model="filters.date_to" type="date" />
+      <input v-model="filters.date_from" type="date" @click="openDatePicker" @focus="openDatePicker" />
+      <input v-model="filters.date_to" type="date" @click="openDatePicker" @focus="openDatePicker" />
       <button @click="loadRows(1)">Search</button>
       <button class="secondary" @click="resetFilters">Reset</button>
     </div>
@@ -66,6 +66,11 @@ async function loadRows(nextPage = 1) {
 function resetFilters() {
   filters.value = { query: '', symbol: '', account: '', side: '', sec_type: '', date_from: '', date_to: '' }
   loadRows(1)
+}
+
+function openDatePicker(event) {
+  const dateInput = event?.target
+  if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
 }
 
 onMounted(() => loadRows(1))
