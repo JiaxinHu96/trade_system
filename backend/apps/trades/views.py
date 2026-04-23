@@ -3,6 +3,7 @@ from decimal import Decimal
 from datetime import datetime
 
 from django.db.models import Q
+from django.db import connection
 from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework.generics import ListAPIView
@@ -60,6 +61,18 @@ def _extract_strategy_from_payload(payload):
         or payload.get('order_reference')
         or ''
     ).strip()
+
+
+def _trade_review_column_exists(column_name):
+    table_name = TradeReview._meta.db_table
+    with connection.cursor() as cursor:
+        if table_name not in connection.introspection.table_names(cursor):
+            return False
+        columns = {
+            item.name
+            for item in connection.introspection.get_table_description(cursor, table_name)
+        }
+    return column_name in columns
 
 
 def _latest_groups_by_symbol(groups):
@@ -325,6 +338,20 @@ class TradeGroupViewSet(ReadOnlyModelViewSet):
         return charts
 
     def _build_process_charts(self, groups):
+        if not _trade_review_column_exists('would_take_again'):
+            return {
+                'pnl_by_setup': {'labels': [], 'values': []},
+                'win_rate_by_setup': {'labels': [], 'values': []},
+                'avg_r_by_setup': {'labels': [], 'values': []},
+                'pnl_by_session': {'labels': [], 'values': []},
+                'rule_violations_count': 0,
+                'mistake_tag_ranking': [],
+                'early_exit_rate': 0.0,
+                'over_hold_rate': 0.0,
+                'overnight_vs_intraday_pnl': {'labels': ['overnight', 'intraday'], 'values': [0, 0]},
+                'first_vs_later_pnl': {'labels': ['first_trade', 'later_trades'], 'values': [0, 0]},
+                'same_symbol_repeated_performance': {'labels': ['repeated_symbol', 'single_touch_symbol'], 'values': [0, 0]},
+            }
         group_ids = [item.id for item in groups]
         reviews = (
             TradeReview.objects.filter(trade_group_id__in=group_ids)

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.db import connection
+from django.db.utils import ProgrammingError
 from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot, TradeMatchedLot
 from apps.journal.models import DailyReview
 
@@ -17,6 +18,19 @@ def _daily_review_has_strategy_column():
 def _trade_matched_lot_table_exists():
     with connection.cursor() as cursor:
         return TradeMatchedLot._meta.db_table in connection.introspection.table_names(cursor)
+
+
+def _trade_review_column_exists(column_name):
+    from apps.journal.models import TradeReview
+    table_name = TradeReview._meta.db_table
+    with connection.cursor() as cursor:
+        if table_name not in connection.introspection.table_names(cursor):
+            return False
+        columns = {
+            item.name
+            for item in connection.introspection.get_table_description(cursor, table_name)
+        }
+    return column_name in columns
 
 
 class RawIBKRExecutionSerializer(serializers.ModelSerializer):
@@ -100,31 +114,37 @@ class TradeGroupSerializer(serializers.ModelSerializer):
         ]
 
     def get_trade_review(self, obj):
+        if not _trade_review_column_exists('would_take_again'):
+            return None
         review = getattr(obj, 'trade_review', None)
         if not review:
             return None
-        return {
-            'id': review.id,
-            'strategy': review.strategy,
-            'session': review.session,
-            'thesis': review.thesis,
-            'entry_trigger': review.entry_trigger,
-            'invalidation': review.invalidation,
-            'planned_target': review.planned_target,
-            'sizing_rationale': review.sizing_rationale,
-            'entry_quality': review.entry_quality,
-            'exit_quality': review.exit_quality,
-            'risk_management': review.risk_management,
-            'followed_plan': review.followed_plan,
-            'emotion_before': review.emotion_before,
-            'emotion_during': review.emotion_during,
-            'emotion_after': review.emotion_after,
-            'what_i_did_well': review.what_i_did_well,
-            'what_to_improve': review.what_to_improve,
-            'realized_r': review.realized_r,
-            'final_grade': review.final_grade,
-            'setup': review.setup_id,
-            'mistake_tags': list(review.mistake_tags.values_list('id', flat=True)),
-            'daily_review': review.daily_review_id,
-            'screenshots': review.screenshots,
-        }
+        try:
+            return {
+                'id': review.id,
+                'strategy': review.strategy,
+                'session': review.session,
+                'thesis': review.thesis,
+                'entry_trigger': review.entry_trigger,
+                'invalidation': review.invalidation,
+                'planned_target': review.planned_target,
+                'sizing_rationale': review.sizing_rationale,
+                'entry_quality': review.entry_quality,
+                'exit_quality': review.exit_quality,
+                'risk_management': review.risk_management,
+                'followed_plan': review.followed_plan,
+                'would_take_again': review.would_take_again,
+                'emotion_before': review.emotion_before,
+                'emotion_during': review.emotion_during,
+                'emotion_after': review.emotion_after,
+                'what_i_did_well': review.what_i_did_well,
+                'what_to_improve': review.what_to_improve,
+                'realized_r': review.realized_r,
+                'final_grade': review.final_grade,
+                'setup': review.setup_id,
+                'mistake_tags': list(review.mistake_tags.values_list('id', flat=True)),
+                'daily_review': review.daily_review_id,
+                'screenshots': review.screenshots,
+            }
+        except ProgrammingError:
+            return None

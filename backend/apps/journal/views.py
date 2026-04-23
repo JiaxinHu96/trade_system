@@ -4,6 +4,7 @@ from decimal import Decimal
 from datetime import datetime
 
 from django.conf import settings
+from django.db import connection
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -23,6 +24,18 @@ from .serializers import (
     TradeJournalSerializer,
     TradeReviewSerializer,
 )
+
+
+def _trade_review_column_exists(column_name):
+    table_name = TradeReview._meta.db_table
+    with connection.cursor() as cursor:
+        if table_name not in connection.introspection.table_names(cursor):
+            return False
+        columns = {
+            item.name
+            for item in connection.introspection.get_table_description(cursor, table_name)
+        }
+    return column_name in columns
 
 
 class DailyReviewViewSet(viewsets.ModelViewSet):
@@ -112,8 +125,9 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
             return missing
 
         closed_trade_cards = []
+        trade_review_enabled = _trade_review_column_exists('would_take_again')
         for group in closed_trades:
-            trade_review = getattr(group, 'trade_review', None)
+            trade_review = getattr(group, 'trade_review', None) if trade_review_enabled else None
             executions_qs = RawIBKRExecution.objects.filter(symbol=group.symbol)
             if group.opened_at:
                 executions_qs = executions_qs.filter(executed_at__gte=group.opened_at)

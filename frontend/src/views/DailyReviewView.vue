@@ -128,6 +128,14 @@
         </div>
       </div>
     </section>
+
+    <section class="card">
+      <div class="section-title">Journal Timeline</div>
+      <div v-if="!dailyTimeline.length" class="empty-row">No daily reviews yet.</div>
+      <div v-for="item in dailyTimeline" :key="item.id" class="review-item">
+        <strong>{{ item.review_date }}</strong> · {{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }} · {{ item.market_summary || '-' }}
+      </div>
+    </section>
   </div>
 </template>
 
@@ -135,6 +143,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import {
   createDailyReview,
+  fetchDailyReviews,
   fetchMistakeTags,
   fetchReviewQueue,
   fetchSetupTags,
@@ -158,6 +167,7 @@ const maxLossSelection = ref('')
 const tradeSectionRef = ref(null)
 const dailySectionRef = ref(null)
 const positionSectionRef = ref(null)
+const dailyTimeline = ref([])
 
 const form = ref({ review_date: queueDate.value, strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [] })
 
@@ -262,6 +272,8 @@ async function loadQueue() {
   hydrateCardForms(queue.value.closed_trades || [])
   hydratePositionForms(queue.value.open_positions || [])
   hydrateDailyReview(queue.value.daily_review)
+  const timelineRes = await fetchDailyReviews({ page_size: 10 })
+  dailyTimeline.value = timelineRes.data?.results || []
 }
 
 async function saveCardReview(tradeGroupId) {
