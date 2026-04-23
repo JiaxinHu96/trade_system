@@ -6,7 +6,7 @@
     </div>
 
     <div class="card toolbar">
-      <input v-model="filters.date" type="date" />
+      <input v-model="filters.date" type="date" @click="openDatePicker" @focus="openDatePicker" />
       <input v-model="filters.symbol" type="text" placeholder="Symbol" />
       <select v-model="filters.status">
         <option value="">All Status</option>
@@ -50,6 +50,11 @@ async function loadTrades(nextPage = 1) {
 function resetFilters() {
   filters.value = { date: '', symbol: '', status: '' }
   loadTrades(1)
+}
+
+function openDatePicker(event) {
+  const dateInput = event?.target
+  if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
 }
 
 onMounted(() => loadTrades(1))
