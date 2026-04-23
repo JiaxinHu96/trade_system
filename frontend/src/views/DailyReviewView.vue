@@ -35,7 +35,11 @@
           <div class="trade-review-head">
             <div>
               <div><strong>{{ card.symbol }}</strong> <span :class="['badge', card.realized_pnl >= 0 ? 'badge-profit' : 'badge-loss']">{{ card.realized_pnl }}</span> <span class="badge">{{ card.status }}</span></div>
-              <div class="muted-copy">Hold {{ card.hold_minutes || '-' }}m · Exec {{ card.executions_count }} · Shots {{ card.screenshots_count }}</div>
+              <div class="muted-copy">
+                Hold {{ card.hold_minutes || '-' }}m ·
+                <span class="metric-with-tip">Exec {{ card.executions_count }}<span class="metric-tip">Exec = 该交易时间窗内的成交笔数（Raw Executions count）。</span></span> ·
+                <span class="metric-with-tip">Shots {{ card.screenshots_count }}<span class="metric-tip">Shots = 该笔复盘上传的截图数量。</span></span>
+              </div>
               <div class="muted-copy">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }} · Mistakes: {{ (card.mistake_tags || []).join(', ') || '-' }}</div>
               <div class="muted-copy">Missing: {{ (card.missing_items || []).join(' / ') || 'none' }}</div>
             </div>
@@ -53,18 +57,17 @@
           <div v-if="expandedCards.includes(card.trade_group_id)" class="accordion-body compact-trade-body">
             <div class="journal-form-grid trade-review-form-grid">
               <label><span>Strategy</span><input v-model="tradeReviewForms[card.trade_group_id].strategy" /></label>
-              <label><span>Setup</span>
+              <label><span class="label-with-tip">Setup<span class="field-tip">Setup=交易形态/模式（如 Breakout、Pullback）。</span></span>
                 <select v-model="tradeReviewForms[card.trade_group_id].setup">
                   <option :value="null">-</option>
                   <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
                 </select>
-                <small class="field-help">Setup=这笔交易的形态/模式（如 Breakout、Pullback）。</small>
               </label>
               <label><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
               <label><span>Would take again</span><select v-model="tradeReviewForms[card.trade_group_id].would_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
-              <label><span>Entry Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /><small class="field-help">1-5分：入场质量（越高越好）。</small></label>
-              <label><span>Exit Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /><small class="field-help">1-5分：出场执行质量（越高越好）。</small></label>
-              <label><span>Risk Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /><small class="field-help">1-5分：风险控制质量（止损/仓位）。</small></label>
+              <label><span class="label-with-tip">Entry Q<span class="field-tip">1-5分：入场质量，5=非常理想。</span></span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /></label>
+              <label><span class="label-with-tip">Exit Q<span class="field-tip">1-5分：出场执行质量，5=非常理想。</span></span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /></label>
+              <label><span class="label-with-tip">Risk Q<span class="field-tip">1-5分：风险控制质量（仓位/止损执行）。</span></span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /></label>
               <label><span>Followed plan</span><select v-model="tradeReviewForms[card.trade_group_id].followed_plan"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
             </div>
             <div class="trade-review-text-grid">
@@ -72,9 +75,9 @@
               <label><span>What to improve</span><textarea v-model="tradeReviewForms[card.trade_group_id].what_to_improve" rows="2"></textarea></label>
             </div>
 
-            <div><span>Mistake Tags</span><div class="chip-wrap">
+            <div><span class="label-with-tip">Mistake Tags<span class="field-tip">本笔交易出现的问题标签，可多选。</span></span><div class="chip-wrap">
               <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (tradeReviewForms[card.trade_group_id].mistake_tags || []).includes(tag.id) }]" @click="toggleTradeMistakeTag(card.trade_group_id, tag.id)">{{ tag.name }}</button>
-            </div><small class="field-help">Mistake Tags=本笔交易出现的问题标签（可多选）。</small></div>
+            </div></div>
 
             <label>
               <span>Screenshots</span>
@@ -542,10 +545,42 @@ onMounted(async () => {
   min-height: 72px;
 }
 
-.field-help {
-  color: #64748b;
+.label-with-tip,
+.metric-with-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.label-with-tip {
+  cursor: help;
+}
+
+.field-tip,
+.metric-tip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 200px;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #f8fafc;
   font-size: 12px;
   line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.label-with-tip:hover .field-tip,
+.metric-with-tip:hover .metric-tip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .save-error {
