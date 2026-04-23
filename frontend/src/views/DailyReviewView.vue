@@ -11,6 +11,8 @@
     <section class="card tv-tabbed-panel tv-tabbed-panel-compact">
       <div class="tv-panel-tabs">
         <button :class="['tv-subtab', { active: journalTab === 'workspace' }]" @click="journalTab='workspace'">Review Workspace</button>
+        <button :class="['tv-subtab', { active: journalTab === 'pretrade' }]" @click="openPretradeTab">Pre-Trade Plan</button>
+        <button :class="['tv-subtab', { active: journalTab === 'analytics' }]" @click="openAnalyticsTab">Analytics</button>
         <button :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="openTimelineTab">Journal Timeline</button>
       </div>
     </section>
@@ -69,6 +71,9 @@
               <label :title="fieldHint('exit_q')"><span>Exit Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /></label>
               <label :title="fieldHint('risk_q')"><span>Risk Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /></label>
               <label :title="fieldHint('followed_plan')"><span>Followed plan</span><select v-model="tradeReviewForms[card.trade_group_id].followed_plan"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
+              <label :title="fieldHint('primary_mistake_type')"><span>Primary mistake type</span><select v-model="tradeReviewForms[card.trade_group_id].primary_mistake_type"><option value="none">none</option><option value="discipline">discipline</option><option value="execution">execution</option><option value="risk">risk</option><option value="strategy">strategy</option><option value="psychology">psychology</option><option value="process">process</option></select></label>
+              <label :title="fieldHint('mistake_severity')"><span>Mistake severity</span><select v-model="tradeReviewForms[card.trade_group_id].mistake_severity"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></label>
+              <label :title="fieldHint('rule_violation_type')"><span>Rule violation type</span><select v-model="tradeReviewForms[card.trade_group_id].rule_violation_type"><option value="none">none</option><option value="entry_rule">entry_rule</option><option value="risk_rule">risk_rule</option><option value="exit_rule">exit_rule</option><option value="size_rule">size_rule</option></select></label>
             </div>
             <div class="trade-review-text-grid">
               <label :title="fieldHint('thesis')"><span>Thesis</span><textarea v-model="tradeReviewForms[card.trade_group_id].thesis" rows="2"></textarea></label>
@@ -178,6 +183,75 @@
     </section>
     </template>
 
+    <section v-else-if="journalTab === 'pretrade'" class="card">
+      <div class="section-title">Pre-Trade Plan / Setup Snapshot</div>
+      <div class="journal-form-grid workspace-field-grid">
+        <label :title="fieldHint('queue_date')"><span>Plan Date</span><input v-model="pretradeDate" type="date" @change="loadPretrade" @click="openDatePicker" @focus="openDatePicker" /></label>
+        <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
+        <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="pretradeForm.market_regime" /></label>
+        <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
+        <label><span>Risk Budget (R)</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
+      </div>
+      <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
+      <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
+      <label><span>Checklist JSON</span><textarea v-model="checklistText" rows="2"></textarea></label>
+      <div class="filter-action-row">
+        <button @click="savePretrade" :disabled="savingPretrade">{{ savingPretrade ? 'Saving...' : 'Save Pre-Trade Plan' }}</button>
+      </div>
+
+      <div class="section-title" style="margin-top:14px;">Setup Snapshots</div>
+      <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
+        <div class="journal-form-grid trade-review-form-grid">
+          <label><span>Symbol</span><input v-model="row.symbol" /></label>
+          <label><span>Strategy</span><input v-model="row.strategy" /></label>
+          <label><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+          <label><span>Checklist passed</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
+        </div>
+        <div class="journal-form-grid workspace-field-grid">
+          <label><span>Planned Entry</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
+          <label><span>Planned Stop</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
+          <label><span>Planned Target</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
+        </div>
+        <label><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
+        <label><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
+        <div class="filter-action-row">
+          <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
+        </div>
+      </div>
+      <button class="secondary" @click="addSnapshotRow">Add Snapshot</button>
+    </section>
+
+    <section v-else-if="journalTab === 'analytics'" class="card">
+      <div class="section-title">Trade Review Analytics</div>
+      <div class="filter-action-row" style="margin-top:0;">
+        <button @click="loadAnalytics" :disabled="loadingAnalytics">{{ loadingAnalytics ? 'Loading...' : 'Refresh Analytics' }}</button>
+      </div>
+      <div class="journal-text-grid">
+        <div>
+          <div class="section-title minor">By Strategy</div>
+          <div v-for="row in analytics.by_strategy" :key="`s-${row.key}`" class="review-item">
+            {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+          </div>
+        </div>
+        <div>
+          <div class="section-title minor">By Session</div>
+          <div v-for="row in analytics.by_session" :key="`ss-${row.key}`" class="review-item">
+            {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+          </div>
+          <label :title="fieldHint('hold_overnight')"><span>Why hold overnight</span><textarea v-model="positionForms[item.trade_group_id].carry_reason" rows="2"></textarea></label>
+          <label :title="fieldHint('risk_tomorrow')"><span>Risk tomorrow</span><textarea v-model="positionForms[item.trade_group_id].gap_risk_note" rows="2"></textarea></label>
+          <label :title="fieldHint('next_action')"><span>Next action</span><textarea v-model="positionForms[item.trade_group_id].next_session_plan" rows="2"></textarea></label>
+          <div class="filter-action-row"><button @click="saveCheckpoint(item.trade_group_id)" :disabled="savingPosition === item.trade_group_id">{{ savingPosition === item.trade_group_id ? 'Saving...' : 'Save Checkpoint' }}</button></div>
+        </div>
+      </div>
+      <div>
+        <div class="section-title minor">By Symbol</div>
+        <div v-for="row in analytics.by_symbol" :key="`sym-${row.key}`" class="review-item">
+          {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+        </div>
+      </div>
+    </section>
+
     <section v-else class="card">
       <div class="section-title">Journal Timeline</div>
       <div class="journal-form-grid timeline-filter-grid">
@@ -199,9 +273,16 @@ import {
   createDailyReview,
   fetchDailyReviews,
   fetchMistakeTags,
+  fetchPretradePlans,
   fetchReviewQueue,
+  fetchSetupSnapshots,
   fetchSetupTags,
+  fetchTradeReviewAnalyticsSummary,
+  savePretradePlan,
   savePositionCheckpoint,
+  updatePretradePlan,
+  updateSetupSnapshot,
+  saveSetupSnapshot,
   saveTradeReview,
   uploadDailyReviewImages,
 } from '../api/journal'
@@ -229,6 +310,15 @@ const positionSectionRef = ref(null)
 const dailyTimeline = ref([])
 const timelineDateFrom = ref('')
 const timelineDateTo = ref('')
+const pretradeDate = ref(new Date().toISOString().slice(0, 10))
+const pretradeForm = ref({ id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' })
+const watchlistText = ref('')
+const checklistText = ref('{}')
+const snapshotForms = ref([])
+const savingPretrade = ref(false)
+const savingSnapshotId = ref(null)
+const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [] })
+const loadingAnalytics = ref(false)
 
 const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
@@ -275,6 +365,12 @@ const FIELD_HINTS = {
   next_action: '次日计划动作（持有/减仓/平仓条件）。',
   date_from: '时间线起始日期。',
   date_to: '时间线结束日期。',
+  primary_mistake_type: '错误主类型硬分类，用于后续成本归因。',
+  mistake_severity: '错误严重度硬分类。',
+  rule_violation_type: '违规规则类型硬分类。',
+  watchlist: '盘前重点观察标的列表。',
+  game_plan: '盘前执行剧本与优先级。',
+  catalysts: '盘前重要事件/催化剂。',
 }
 
 function fieldHint(key) {
@@ -317,6 +413,9 @@ function hydrateCardForms(cards) {
       exit_quality: review.exit_quality,
       risk_management: review.risk_management,
       followed_plan: review.followed_plan ?? null,
+      primary_mistake_type: review.primary_mistake_type || 'none',
+      mistake_severity: review.mistake_severity || 'low',
+      rule_violation_type: review.rule_violation_type || 'none',
       what_to_improve: review.what_to_improve || '',
       mistake_tags: review.mistake_tags || [],
       screenshots: review.screenshots || [],
@@ -396,6 +495,16 @@ async function openTimelineTab() {
   if (!dailyTimeline.value.length) await loadTimeline()
 }
 
+async function openPretradeTab() {
+  journalTab.value = 'pretrade'
+  await loadPretrade()
+}
+
+async function openAnalyticsTab() {
+  journalTab.value = 'analytics'
+  await loadAnalytics()
+}
+
 async function saveCardReview(tradeGroupId) {
   savingTrade.value = tradeGroupId
   try {
@@ -421,6 +530,88 @@ function normalizeScore(value) {
   const n = Number(value)
   if (!Number.isFinite(n)) return null
   return Math.min(5, Math.max(1, Math.round(n)))
+}
+
+function buildLocalSnapshot(item = {}) {
+  return {
+    local_id: item.id || `${Date.now()}-${Math.random()}`,
+    id: item.id || null,
+    pretrade_plan: item.pretrade_plan || pretradeForm.value.id,
+    trade_group: item.trade_group || null,
+    symbol: item.symbol || '',
+    strategy: item.strategy || '',
+    setup: item.setup || null,
+    trigger_condition: item.trigger_condition || '',
+    invalidation: item.invalidation || '',
+    planned_entry: item.planned_entry,
+    planned_stop: item.planned_stop,
+    planned_target: item.planned_target,
+    checklist_passed: item.checklist_passed ?? false,
+    snapshot_notes: item.snapshot_notes || '',
+  }
+}
+
+async function loadPretrade() {
+  const res = await fetchPretradePlans({ date: pretradeDate.value, page_size: 1 })
+  const existing = (res.data?.results || res.data || [])[0]
+  if (existing) {
+    pretradeForm.value = { ...existing }
+    watchlistText.value = (existing.watchlist || []).join(', ')
+    checklistText.value = JSON.stringify(existing.pre_trade_checklist || {}, null, 2)
+    const snaps = await fetchSetupSnapshots({ pretrade_plan: existing.id, page_size: 50 })
+    snapshotForms.value = (snaps.data?.results || snaps.data || []).map((item) => buildLocalSnapshot(item))
+  } else {
+    pretradeForm.value = { id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' }
+    watchlistText.value = ''
+    checklistText.value = '{}'
+    snapshotForms.value = [buildLocalSnapshot()]
+  }
+}
+
+async function savePretrade() {
+  savingPretrade.value = true
+  try {
+    let parsedChecklist = {}
+    try { parsedChecklist = JSON.parse(checklistText.value || '{}') } catch { parsedChecklist = {} }
+    const payload = {
+      ...pretradeForm.value,
+      plan_date: pretradeDate.value,
+      watchlist: watchlistText.value.split(',').map((v) => v.trim()).filter(Boolean),
+      pre_trade_checklist: parsedChecklist,
+    }
+    const res = pretradeForm.value.id ? await updatePretradePlan(pretradeForm.value.id, payload) : await savePretradePlan(payload)
+    pretradeForm.value = res.data
+    if (!snapshotForms.value.length) snapshotForms.value = [buildLocalSnapshot()]
+  } finally {
+    savingPretrade.value = false
+  }
+}
+
+function addSnapshotRow() {
+  snapshotForms.value.push(buildLocalSnapshot())
+}
+
+async function saveSnapshot(row) {
+  if (!pretradeForm.value.id) await savePretrade()
+  savingSnapshotId.value = row.local_id
+  try {
+    const payload = { ...row, pretrade_plan: pretradeForm.value.id }
+    delete payload.local_id
+    const res = row.id ? await updateSetupSnapshot(row.id, payload) : await saveSetupSnapshot(payload)
+    Object.assign(row, buildLocalSnapshot(res.data))
+  } finally {
+    savingSnapshotId.value = null
+  }
+}
+
+async function loadAnalytics() {
+  loadingAnalytics.value = true
+  try {
+    const res = await fetchTradeReviewAnalyticsSummary()
+    analytics.value = res.data || { by_strategy: [], by_session: [], by_symbol: [] }
+  } finally {
+    loadingAnalytics.value = false
+  }
 }
 
 async function uploadTradeScreenshots(tradeGroupId, event) {
@@ -485,6 +676,7 @@ async function saveDailyReview(mode = 'draft') {
   } finally {
     savingDaily.value = false
   }
+  positionSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function focusFirstPending() {
@@ -503,6 +695,8 @@ onMounted(async () => {
   await loadMetaTags()
   await loadQueue()
   await loadTimeline()
+  await loadPretrade()
+  await loadAnalytics()
   nextTick(() => focusFirstPending())
 })
 </script>
