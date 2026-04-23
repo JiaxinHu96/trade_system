@@ -30,63 +30,69 @@
     <section class="card" ref="tradeSectionRef">
       <div class="section-title">Trade Review Cards</div>
       <div v-if="!queue.closed_trades?.length" class="empty-row">No closed trades for this day.</div>
-      <div v-for="card in queue.closed_trades" :key="card.trade_group_id" class="journal-entry-card" style="margin-bottom: 12px;">
-        <div class="journal-entry-head" style="justify-content: space-between; gap: 12px;">
-          <div>
-            <div><strong>{{ card.symbol }}</strong> <span :class="['badge', card.realized_pnl >= 0 ? 'badge-profit' : 'badge-loss']">{{ card.realized_pnl }}</span> <span class="badge">{{ card.status }}</span></div>
-            <div class="muted-copy">Hold {{ card.hold_minutes || '-' }}m · Exec {{ card.executions_count }} · Shots {{ card.screenshots_count }}</div>
-            <div class="muted-copy">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }} · Mistakes: {{ (card.mistake_tags || []).join(', ') || '-' }}</div>
-            <div class="muted-copy">Missing: {{ (card.missing_items || []).join(' / ') || 'none' }}</div>
+      <div class="trade-card-grid">
+        <div v-for="card in queue.closed_trades" :key="card.trade_group_id" class="journal-entry-card trade-review-card">
+          <div class="trade-review-head">
+            <div>
+              <div><strong>{{ card.symbol }}</strong> <span :class="['badge', card.realized_pnl >= 0 ? 'badge-profit' : 'badge-loss']">{{ card.realized_pnl }}</span> <span class="badge">{{ card.status }}</span></div>
+              <div class="muted-copy">Hold {{ card.hold_minutes || '-' }}m · Exec {{ card.executions_count }} · Shots {{ card.screenshots_count }}</div>
+              <div class="muted-copy">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }} · Mistakes: {{ (card.mistake_tags || []).join(', ') || '-' }}</div>
+              <div class="muted-copy">Missing: {{ (card.missing_items || []).join(' / ') || 'none' }}</div>
+            </div>
+            <div class="trade-review-progress">
+              <div class="progress-bar"><div class="progress-fill" :style="{ width: `${card.review_completeness || 0}%` }"></div></div>
+              <div class="muted-copy trade-review-percent">{{ card.review_completeness || 0 }}%</div>
+            </div>
           </div>
-          <div style="min-width: 180px;">
-            <div class="progress-bar"><div class="progress-fill" :style="{ width: `${card.review_completeness || 0}%` }"></div></div>
-            <div class="muted-copy" style="text-align:right;">{{ card.review_completeness || 0 }}%</div>
-            <button class="secondary small-btn" @click="toggleCard(card.trade_group_id)">{{ expandedCards.includes(card.trade_group_id) ? 'Close' : 'Edit Review' }}</button>
+          <div class="trade-review-actions">
+            <button class="secondary small-btn" @click="toggleCard(card.trade_group_id)">
+              {{ expandedCards.includes(card.trade_group_id) ? 'Close' : 'Edit Review' }}
+            </button>
           </div>
-        </div>
 
-        <div v-if="expandedCards.includes(card.trade_group_id)" class="accordion-body">
-          <div class="journal-form-grid">
-            <label><span>Strategy</span><input v-model="tradeReviewForms[card.trade_group_id].strategy" /></label>
-            <label><span>Setup</span>
-              <select v-model="tradeReviewForms[card.trade_group_id].setup">
-                <option :value="null">-</option>
-                <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
-              </select>
+          <div v-if="expandedCards.includes(card.trade_group_id)" class="accordion-body compact-trade-body">
+            <div class="journal-form-grid trade-review-form-grid">
+              <label><span>Strategy</span><input v-model="tradeReviewForms[card.trade_group_id].strategy" /></label>
+              <label><span>Setup</span>
+                <select v-model="tradeReviewForms[card.trade_group_id].setup">
+                  <option :value="null">-</option>
+                  <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
+                </select>
+              </label>
+              <label><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
+              <label><span>Would take again</span><select v-model="tradeReviewForms[card.trade_group_id].would_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
+              <label><span>Entry Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /></label>
+              <label><span>Exit Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /></label>
+              <label><span>Risk Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /></label>
+              <label><span>Followed plan</span><select v-model="tradeReviewForms[card.trade_group_id].followed_plan"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
+            </div>
+            <div class="trade-review-text-grid">
+              <label><span>Thesis</span><textarea v-model="tradeReviewForms[card.trade_group_id].thesis" rows="2"></textarea></label>
+              <label><span>What to improve</span><textarea v-model="tradeReviewForms[card.trade_group_id].what_to_improve" rows="2"></textarea></label>
+            </div>
+
+            <div><span>Mistake Tags</span><div class="chip-wrap">
+              <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (tradeReviewForms[card.trade_group_id].mistake_tags || []).includes(tag.id) }]" @click="toggleTradeMistakeTag(card.trade_group_id, tag.id)">{{ tag.name }}</button>
+            </div></div>
+
+            <label>
+              <span>Screenshots</span>
+              <div class="helper-row">
+                <input type="file" accept="image/*" multiple @change="uploadTradeScreenshots(card.trade_group_id, $event)" />
+                <span class="muted-copy" v-if="uploadingTrade === card.trade_group_id">Uploading...</span>
+              </div>
             </label>
-            <label><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
-            <label><span>Would take again</span><select v-model="tradeReviewForms[card.trade_group_id].would_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
-          </div>
-          <div class="journal-form-grid">
-            <label><span>Entry Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /></label>
-            <label><span>Exit Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /></label>
-            <label><span>Risk Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /></label>
-            <label><span>Followed plan</span><select v-model="tradeReviewForms[card.trade_group_id].followed_plan"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
-          </div>
-          <label><span>Thesis</span><textarea v-model="tradeReviewForms[card.trade_group_id].thesis" rows="2"></textarea></label>
-          <label><span>What to improve</span><textarea v-model="tradeReviewForms[card.trade_group_id].what_to_improve" rows="2"></textarea></label>
-
-          <div><span>Mistake Tags</span><div class="chip-wrap">
-            <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (tradeReviewForms[card.trade_group_id].mistake_tags || []).includes(tag.id) }]" @click="toggleTradeMistakeTag(card.trade_group_id, tag.id)">{{ tag.name }}</button>
-          </div></div>
-
-          <label>
-            <span>Screenshots</span>
-            <div class="helper-row">
-              <input type="file" accept="image/*" multiple @change="uploadTradeScreenshots(card.trade_group_id, $event)" />
-              <span class="muted-copy" v-if="uploadingTrade === card.trade_group_id">Uploading...</span>
+            <div v-if="(tradeReviewForms[card.trade_group_id].screenshots || []).length" class="image-grid compact-image-grid">
+              <div v-for="(url, idx) in tradeReviewForms[card.trade_group_id].screenshots" :key="`${url}-${idx}`" class="image-tile">
+                <img :src="url" alt="trade screenshot" class="image-preview" />
+                <button type="button" class="secondary small-btn" @click="removeTradeScreenshot(card.trade_group_id, idx)">Remove</button>
+              </div>
             </div>
-          </label>
-          <div v-if="(tradeReviewForms[card.trade_group_id].screenshots || []).length" class="image-grid compact-image-grid">
-            <div v-for="(url, idx) in tradeReviewForms[card.trade_group_id].screenshots" :key="`${url}-${idx}`" class="image-tile">
-              <img :src="url" alt="trade screenshot" class="image-preview" />
-              <button type="button" class="secondary small-btn" @click="removeTradeScreenshot(card.trade_group_id, idx)">Remove</button>
-            </div>
-          </div>
 
-          <div class="filter-action-row">
-            <button @click="saveCardReview(card.trade_group_id)" :disabled="savingTrade === card.trade_group_id">{{ savingTrade === card.trade_group_id ? 'Saving...' : 'Save Trade Review' }}</button>
-            <router-link class="inline-link" :to="`/trades/${card.trade_group_id}`">Open Detail</router-link>
+            <div class="filter-action-row">
+              <button @click="saveCardReview(card.trade_group_id)" :disabled="savingTrade === card.trade_group_id">{{ savingTrade === card.trade_group_id ? 'Saving...' : 'Save Trade Review' }}</button>
+              <router-link class="inline-link" :to="`/trades/${card.trade_group_id}`">Open Detail</router-link>
+            </div>
           </div>
         </div>
       </div>
@@ -442,6 +448,54 @@ onMounted(async () => {
   align-items: end;
 }
 
+.trade-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+}
+
+.trade-review-card {
+  margin-bottom: 0;
+  padding: 14px;
+}
+
+.trade-review-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trade-review-progress {
+  min-width: 72px;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.trade-review-percent {
+  text-align: right;
+}
+
+.trade-review-actions {
+  margin-top: 8px;
+}
+
+.compact-trade-body {
+  padding-top: 10px;
+}
+
+.trade-review-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.trade-review-text-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 10px;
+}
+
 .workspace-field-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
   gap: 10px 16px;
@@ -455,8 +509,15 @@ onMounted(async () => {
 .workspace-field-grid :deep(input),
 .workspace-field-grid :deep(select),
 .workspace-summary-grid :deep(input),
-.timeline-filter-grid :deep(input) {
+.timeline-filter-grid :deep(input),
+.trade-review-form-grid :deep(input),
+.trade-review-form-grid :deep(select),
+.trade-review-text-grid :deep(textarea) {
   padding: 8px 10px;
+}
+
+.trade-review-text-grid :deep(textarea) {
+  min-height: 72px;
 }
 
 .timeline-filter-grid {
@@ -466,6 +527,7 @@ onMounted(async () => {
 }
 
 @media (max-width: 900px) {
+  .trade-card-grid,
   .workspace-summary-grid,
   .workspace-field-grid,
   .timeline-filter-grid {
