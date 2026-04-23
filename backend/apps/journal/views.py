@@ -38,6 +38,10 @@ def _trade_review_column_exists(column_name):
     return column_name in columns
 
 
+def _trade_review_schema_ready():
+    return _trade_review_column_exists('would_take_again')
+
+
 class DailyReviewViewSet(viewsets.ModelViewSet):
     queryset = DailyReview.objects.all().order_by('-review_date', '-updated_at')
     serializer_class = DailyReviewSerializer
@@ -240,6 +244,8 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
     serializer_class = TradeReviewSerializer
 
     def get_queryset(self):
+        if not _trade_review_schema_ready():
+            return TradeReview.objects.none()
         qs = super().get_queryset().order_by('-updated_at', '-id')
         trade_group_id = self.request.query_params.get('trade_group')
         daily_review_id = self.request.query_params.get('daily_review')
@@ -249,7 +255,19 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
             qs = qs.filter(daily_review_id=daily_review_id)
         return qs
 
+    def list(self, request, *args, **kwargs):
+        if not _trade_review_schema_ready():
+            return Response([])
+        return super().list(request, *args, **kwargs)
+
+    def retrieve(self, request, *args, **kwargs):
+        if not _trade_review_schema_ready():
+            return Response({'detail': 'TradeReview schema is not ready. Please run migrations.'}, status=status.HTTP_409_CONFLICT)
+        return super().retrieve(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
+        if not _trade_review_schema_ready():
+            return Response({'detail': 'TradeReview schema is not ready. Please run migrations.'}, status=status.HTTP_409_CONFLICT)
         trade_group_id = request.data.get('trade_group')
         if trade_group_id:
             instance = TradeReview.objects.filter(trade_group_id=trade_group_id).first()
@@ -259,6 +277,16 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
                 self.perform_update(serializer)
                 return Response(serializer.data, status=status.HTTP_200_OK)
         return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        if not _trade_review_schema_ready():
+            return Response({'detail': 'TradeReview schema is not ready. Please run migrations.'}, status=status.HTTP_409_CONFLICT)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        if not _trade_review_schema_ready():
+            return Response({'detail': 'TradeReview schema is not ready. Please run migrations.'}, status=status.HTTP_409_CONFLICT)
+        return super().partial_update(request, *args, **kwargs)
 
 
 class PositionCheckpointViewSet(viewsets.ModelViewSet):
