@@ -70,6 +70,20 @@
             <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (tradeReviewForms[card.trade_group_id].mistake_tags || []).includes(tag.id) }]" @click="toggleTradeMistakeTag(card.trade_group_id, tag.id)">{{ tag.name }}</button>
           </div></div>
 
+          <label>
+            <span>Screenshots</span>
+            <div class="helper-row">
+              <input type="file" accept="image/*" multiple @change="uploadTradeScreenshots(card.trade_group_id, $event)" />
+              <span class="muted-copy" v-if="uploadingTrade === card.trade_group_id">Uploading...</span>
+            </div>
+          </label>
+          <div v-if="(tradeReviewForms[card.trade_group_id].screenshots || []).length" class="image-grid compact-image-grid">
+            <div v-for="(url, idx) in tradeReviewForms[card.trade_group_id].screenshots" :key="`${url}-${idx}`" class="image-tile">
+              <img :src="url" alt="trade screenshot" class="image-preview" />
+              <button type="button" class="secondary small-btn" @click="removeTradeScreenshot(card.trade_group_id, idx)">Remove</button>
+            </div>
+          </div>
+
           <div class="filter-action-row">
             <button @click="saveCardReview(card.trade_group_id)" :disabled="savingTrade === card.trade_group_id">{{ savingTrade === card.trade_group_id ? 'Saving...' : 'Save Trade Review' }}</button>
             <router-link class="inline-link" :to="`/trades/${card.trade_group_id}`">Open Detail</router-link>
@@ -163,6 +177,7 @@ import {
   fetchSetupTags,
   savePositionCheckpoint,
   saveTradeReview,
+  uploadDailyReviewImages,
 } from '../api/journal'
 
 const queueDate = ref(new Date().toISOString().slice(0, 10))
@@ -178,6 +193,7 @@ const mistakeTags = ref([])
 const savingTrade = ref(null)
 const savingDaily = ref(false)
 const savingPosition = ref(null)
+const uploadingTrade = ref(null)
 const maxLossSelection = ref('')
 const tradeSectionRef = ref(null)
 const dailySectionRef = ref(null)
@@ -230,6 +246,7 @@ function hydrateCardForms(cards) {
       followed_plan: review.followed_plan ?? null,
       what_to_improve: review.what_to_improve || '',
       mistake_tags: review.mistake_tags || [],
+      screenshots: review.screenshots || [],
     }
   })
   tradeReviewForms.value = next
@@ -312,6 +329,27 @@ async function saveCardReview(tradeGroupId) {
   } finally {
     savingTrade.value = null
   }
+}
+
+async function uploadTradeScreenshots(tradeGroupId, event) {
+  const files = event?.target?.files
+  if (!files?.length) return
+  uploadingTrade.value = tradeGroupId
+  try {
+    const res = await uploadDailyReviewImages(files)
+    const urls = res.data?.image_urls || (res.data?.image_url ? [res.data.image_url] : [])
+    const prev = tradeReviewForms.value[tradeGroupId].screenshots || []
+    tradeReviewForms.value[tradeGroupId].screenshots = [...prev, ...urls]
+  } finally {
+    uploadingTrade.value = null
+    if (event?.target) event.target.value = ''
+  }
+}
+
+function removeTradeScreenshot(tradeGroupId, index) {
+  const arr = [...(tradeReviewForms.value[tradeGroupId].screenshots || [])]
+  arr.splice(index, 1)
+  tradeReviewForms.value[tradeGroupId].screenshots = arr
 }
 
 async function saveCheckpoint(tradeGroupId) {
