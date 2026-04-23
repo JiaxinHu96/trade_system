@@ -111,6 +111,7 @@ class TradeReview(models.Model):
     exit_quality = models.PositiveSmallIntegerField(null=True, blank=True)
     risk_management = models.PositiveSmallIntegerField(null=True, blank=True)
     followed_plan = models.BooleanField(null=True, blank=True)
+    would_take_again = models.CharField(max_length=32, blank=True, default='')
     mistake_tags = models.ManyToManyField(MistakeTag, blank=True, related_name='trade_reviews')
     emotion_before = models.CharField(max_length=64, blank=True, default='')
     emotion_during = models.CharField(max_length=64, blank=True, default='')

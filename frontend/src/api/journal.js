@@ -21,6 +21,8 @@ export const saveTradeJournal = (payload) => api.post('/journal/trade-journals/'
 export const fetchTradeReviews = (params = {}) => api.get('/journal/trade-reviews/', { params })
 export const saveTradeReview = (payload) => api.post('/journal/trade-reviews/', payload)
 export const updateTradeReview = (id, payload) => api.patch(`/journal/trade-reviews/${id}/`, payload)
+export const fetchSetupTags = () => api.get('/journal/setup-tags/')
+export const fetchMistakeTags = () => api.get('/journal/mistake-tags/')
 
 export const fetchPositionCheckpoints = (params = {}) => api.get('/journal/position-checkpoints/', { params })
 export const savePositionCheckpoint = (payload) => api.post('/journal/position-checkpoints/', payload)

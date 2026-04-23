@@ -14,10 +14,12 @@ from rest_framework.views import APIView
 
 from apps.trades.models import RawIBKRExecution
 from apps.trades.models import TradeGroup
-from .models import DailyReview, PositionCheckpoint, TradeJournal, TradeReview
+from .models import DailyReview, MistakeTag, PositionCheckpoint, SetupTag, TradeJournal, TradeReview
 from .serializers import (
     DailyReviewSerializer,
+    MistakeTagSerializer,
     PositionCheckpointSerializer,
+    SetupTagSerializer,
     TradeJournalSerializer,
     TradeReviewSerializer,
 )
@@ -93,6 +95,22 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
             ]
             return int(round((sum(checks) / len(checks)) * 100))
 
+        def _missing_review_items(review):
+            if not review:
+                return ['strategy', 'setup', 'grade', 'mistake_tags', 'screenshot']
+            missing = []
+            if not review.strategy:
+                missing.append('strategy')
+            if not review.setup_id:
+                missing.append('setup')
+            if not review.final_grade:
+                missing.append('grade')
+            if review.mistake_tags.count() == 0:
+                missing.append('mistake_tags')
+            if not review.screenshots:
+                missing.append('screenshot')
+            return missing
+
         closed_trade_cards = []
         for group in closed_trades:
             trade_review = getattr(group, 'trade_review', None)
@@ -116,6 +134,10 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
                 'screenshots_count': len(trade_review.screenshots or []) if trade_review else 0,
                 'review_completeness': _review_completeness(trade_review),
                 'has_review': bool(trade_review),
+                'setup_name': trade_review.setup.name if trade_review and trade_review.setup else '',
+                'grade': trade_review.final_grade if trade_review else '',
+                'mistake_tags': [tag.name for tag in trade_review.mistake_tags.all()] if trade_review else [],
+                'missing_items': _missing_review_items(trade_review),
                 'trade_review': TradeReviewSerializer(trade_review).data if trade_review else None,
             })
 
@@ -127,6 +149,7 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
                 'symbol': group.symbol,
                 'status': group.status,
                 'open_qty': group.open_qty,
+                'avg_open_cost': group.avg_open_cost,
                 'opened_at': group.opened_at,
                 'latest_checkpoint_id': latest_checkpoint.id if latest_checkpoint else None,
                 'latest_checkpoint_date': latest_checkpoint.review_date if latest_checkpoint else None,
@@ -240,6 +263,16 @@ class PositionCheckpointViewSet(viewsets.ModelViewSet):
         if status_value:
             qs = qs.filter(status=status_value)
         return qs
+
+
+class SetupTagViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = SetupTag.objects.all().order_by('name')
+    serializer_class = SetupTagSerializer
+
+
+class MistakeTagViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = MistakeTag.objects.all().order_by('name')
+    serializer_class = MistakeTagSerializer
 
 
 class DailyReviewImageUploadAPIView(APIView):
