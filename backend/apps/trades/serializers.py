@@ -49,6 +49,7 @@ class TradeGroupSerializer(serializers.ModelSerializer):
     raw_executions = serializers.SerializerMethodField()
     fills = serializers.SerializerMethodField()
     linked_daily_reviews = serializers.SerializerMethodField()
+    trade_review = serializers.SerializerMethodField()
 
     class Meta:
         model = TradeGroup
@@ -84,7 +85,9 @@ class TradeGroupSerializer(serializers.ModelSerializer):
         return TradeFillSerializer(qs, many=True).data
 
     def get_linked_daily_reviews(self, obj):
-        review_qs = obj.daily_reviews.all().order_by('-review_date', '-id')
+        direct_ids = obj.daily_reviews.values_list('id', flat=True)
+        linked_ids = obj.daily_review_links.values_list('id', flat=True)
+        review_qs = DailyReview.objects.filter(id__in=set(direct_ids) | set(linked_ids)).order_by('-review_date', '-id')
         if not _daily_review_has_strategy_column():
             review_qs = review_qs.defer('strategy', 'thesis', 'entry_logic', 'exit_logic')
         return [
@@ -95,3 +98,33 @@ class TradeGroupSerializer(serializers.ModelSerializer):
             }
             for review in review_qs
         ]
+
+    def get_trade_review(self, obj):
+        review = getattr(obj, 'trade_review', None)
+        if not review:
+            return None
+        return {
+            'id': review.id,
+            'strategy': review.strategy,
+            'session': review.session,
+            'thesis': review.thesis,
+            'entry_trigger': review.entry_trigger,
+            'invalidation': review.invalidation,
+            'planned_target': review.planned_target,
+            'sizing_rationale': review.sizing_rationale,
+            'entry_quality': review.entry_quality,
+            'exit_quality': review.exit_quality,
+            'risk_management': review.risk_management,
+            'followed_plan': review.followed_plan,
+            'emotion_before': review.emotion_before,
+            'emotion_during': review.emotion_during,
+            'emotion_after': review.emotion_after,
+            'what_i_did_well': review.what_i_did_well,
+            'what_to_improve': review.what_to_improve,
+            'realized_r': review.realized_r,
+            'final_grade': review.final_grade,
+            'setup': review.setup_id,
+            'mistake_tags': list(review.mistake_tags.values_list('id', flat=True)),
+            'daily_review': review.daily_review_id,
+            'screenshots': review.screenshots,
+        }

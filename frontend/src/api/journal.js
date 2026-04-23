@@ -16,3 +16,10 @@ export const uploadDailyReviewImages = (files) => {
 
 export const fetchTradeJournalByTradeGroup = (tradeGroupId) => api.get('/journal/trade-journals/', { params: { trade_group: tradeGroupId } })
 export const saveTradeJournal = (payload) => api.post('/journal/trade-journals/', payload)
+
+export const fetchTradeReviews = (params = {}) => api.get('/journal/trade-reviews/', { params })
+export const saveTradeReview = (payload) => api.post('/journal/trade-reviews/', payload)
+export const updateTradeReview = (id, payload) => api.patch(`/journal/trade-reviews/${id}/`, payload)
+
+export const fetchPositionCheckpoints = (params = {}) => api.get('/journal/position-checkpoints/', { params })
+export const savePositionCheckpoint = (payload) => api.post('/journal/position-checkpoints/', payload)

@@ -4,298 +4,104 @@
       <div>
         <div class="dashboard-kicker">Trading Journal</div>
         <h1 class="dashboard-title">Journal</h1>
-        <p class="dashboard-subtitle">记录当天市场观察、情绪、经验与图片，并把复盘直接关联到当天具体交易。</p>
-      </div>
-    </div>
-
-    <div class="card tv-tabbed-panel journal-tab-card">
-      <div class="tv-panel-tabs">
-        <button type="button" aria-label="Switch to Journal Entry" :class="['tv-subtab', { active: journalTab === 'entry' }]" @click="journalTab = 'entry'">Journal Entry</button>
-        <button type="button" aria-label="Switch to Journal Timeline" :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="journalTab = 'timeline'">Journal Timeline</button>
+        <p class="dashboard-subtitle">升级为三层复盘：日内总复盘 + 多笔 Trade Reviews + 持仓 checkpoint。</p>
       </div>
     </div>
 
     <div class="journal-layout journal-layout-wide journal-shell">
-      <section v-if="journalTab === 'entry'" class="card journal-form-card journal-surface">
-        <div class="section-title">{{ editingId ? 'Edit Journal Entry' : 'New Journal Entry' }}</div>
+      <section class="card journal-form-card journal-surface">
+        <div class="section-title">{{ editingId ? 'Edit Daily Review' : 'New Daily Review' }}</div>
         <div class="journal-form-grid">
-          <label class="journal-date-field">
-            <span>Date</span>
-            <input ref="dateInputRef" v-model="form.review_date" type="date" @change="loadTradeOptions" @click="openDatePicker" @focus="openDatePicker" />
-          </label>
+          <label class="journal-date-field"><span>Date</span><input ref="dateInputRef" v-model="form.review_date" type="date" @change="loadTradeOptions" /></label>
+          <label><span>Market Regime</span><input v-model="form.market_regime" placeholder="trend / range / breakout" /></label>
+          <label><span>Daily Bias</span><input v-model="form.daily_bias" placeholder="bullish / neutral / bearish" /></label>
         </div>
 
         <div class="journal-linked-trade-block">
-          <div class="section-title minor">Linked Trade Group</div>
+          <div class="section-title minor">Linked Trade Groups (multi-select)</div>
           <div class="journal-linked-trade-options">
-            <button type="button" :class="['trade-option-chip', { active: form.related_trade_group === null }]" @click="form.related_trade_group = null">No linked trade</button>
-            <button
-              v-for="option in tradeOptions"
-              :key="option.id"
-              type="button"
-              :class="['trade-option-chip', { active: form.related_trade_group === option.id }]"
-              @click="form.related_trade_group = option.id"
-            >
-              <strong>{{ option.symbol }}</strong>
-              <span>{{ option.status }}</span>
-              <span>PnL {{ option.realized_pnl }}</span>
+            <button v-for="option in tradeOptions" :key="option.id" type="button" :class="['trade-option-chip', { active: form.related_trade_groups.includes(option.id) }]" @click="toggleTradeGroup(option.id)">
+              <strong>{{ option.symbol }}</strong><span>{{ option.status }}</span><span>PnL {{ option.realized_pnl }}</span>
             </button>
-          </div>
-          <div v-if="!tradeOptions.length" class="muted-copy">No trade groups found for the selected day.</div>
-        </div>
-
-        <label>
-          <span>Review Images</span>
-          <div class="helper-row">
-            <input type="file" accept="image/*" multiple @change="handleFileUpload" />
-            <button type="button" class="secondary" @click="clearImages">Clear Images</button>
-          </div>
-        </label>
-
-        <div v-if="form.image_urls.length" class="image-grid compact-image-grid">
-          <div v-for="(url, idx) in form.image_urls" :key="url" class="image-tile">
-            <img :src="url" alt="review preview" class="image-preview" />
-            <button type="button" class="secondary small-btn" @click="removeImage(idx)">Remove</button>
           </div>
         </div>
 
         <div class="journal-text-grid">
-          <label class="journal-strategy-row">
-            <span>Strategy</span>
-            <select v-model="form.strategy" class="compact-strategy-select">
-              <option value="">Select strategy</option>
-              <option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option>
-            </select>
-          </label>
-          <label><span>Market Summary</span><textarea v-model="form.market_summary" rows="4"></textarea></label>
-          <label><span>Emotions</span><textarea v-model="form.emotions" rows="4"></textarea></label>
-          <label><span>Thesis</span><textarea v-model="form.thesis" rows="4"></textarea></label>
-          <label><span>Entry Logic</span><textarea v-model="form.entry_logic" rows="4"></textarea></label>
-          <label><span>Exit Logic</span><textarea v-model="form.exit_logic" rows="4"></textarea></label>
-          <label><span>Lessons</span><textarea v-model="form.lessons" rows="4"></textarea></label>
-          <label><span>Next Day Plan</span><textarea v-model="form.next_day_plan" rows="4"></textarea></label>
+          <label class="journal-strategy-row"><span>Strategy</span><select v-model="form.strategy" class="compact-strategy-select"><option value="">Select strategy</option><option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option></select></label>
+          <label><span>Key levels / catalyst</span><textarea v-model="form.key_levels_catalyst" rows="3"></textarea></label>
+          <label><span>Watchlist</span><textarea v-model="form.watchlist" rows="3"></textarea></label>
+          <label><span>Market Summary</span><textarea v-model="form.market_summary" rows="3"></textarea></label>
+          <label><span>Biggest Mistake</span><textarea v-model="form.biggest_mistake" rows="3"></textarea></label>
+          <label><span>Main Lesson</span><textarea v-model="form.lessons" rows="3"></textarea></label>
+          <label><span>Tomorrow Plan</span><textarea v-model="form.next_day_plan" rows="3"></textarea></label>
         </div>
-        <div class="filter-action-row">
-          <button @click="submitReview" :disabled="loading || uploading">{{ savingLabel }}</button>
-          <button v-if="editingId" class="secondary" @click="cancelEdit">Cancel</button>
+
+        <div class="journal-form-grid">
+          <label><span>Discipline (1-10)</span><input v-model.number="form.discipline_score" type="number" min="1" max="10" /></label>
+          <label><span>Emotional Control (1-10)</span><input v-model.number="form.emotional_control_score" type="number" min="1" max="10" /></label>
+          <label><span>Max Daily Loss Respected?</span><select v-model="maxLossSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
         </div>
+
+        <label><span>Review Images</span><div class="helper-row"><input type="file" accept="image/*" multiple @change="handleFileUpload" /><button type="button" class="secondary" @click="clearImages">Clear Images</button></div></label>
+        <div v-if="form.image_urls.length" class="image-grid compact-image-grid">
+          <div v-for="(url, idx) in form.image_urls" :key="url" class="image-tile"><img :src="url" alt="review preview" class="image-preview" /><button type="button" class="secondary small-btn" @click="removeImage(idx)">Remove</button></div>
+        </div>
+        <div class="filter-action-row"><button @click="submitReview" :disabled="loading || uploading">{{ savingLabel }}</button><button v-if="editingId" class="secondary" @click="cancelEdit">Cancel</button></div>
       </section>
 
-      <section v-if="journalTab === 'timeline'" class="card journal-list-card journal-surface">
-        <div class="journal-list-head">
-          <div class="section-title">Journal Timeline</div>
-          <div class="journal-list-filters timeline-filters">
-            <input ref="listDateFromInputRef" v-model="listDateFromFilter" type="date" @change="loadReviews(1)" @click="openListDatePicker('from')" @focus="openListDatePicker('from')" />
-            <input ref="listDateToInputRef" v-model="listDateToFilter" type="date" @change="loadReviews(1)" @click="openListDatePicker('to')" @focus="openListDatePicker('to')" />
-            <select v-model="listStrategySelect" class="timeline-strategy-select" @change="loadReviews(1)">
-              <option value="">All strategies</option>
-              <option v-for="item in activeStrategyOptions" :key="item.id" :value="item.name">{{ item.name }}</option>
-            </select>
-            <button class="secondary small-btn" @click="loadReviews(1)">Search</button>
-          </div>
-        </div>
-
+      <section class="card journal-list-card journal-surface">
+        <div class="section-title">Daily Review Timeline</div>
         <div v-for="item in reviews" :key="item.id" class="journal-entry-card accordion tv-journal-card">
           <button class="journal-entry-head accordion-trigger" @click="toggleReview(item.id)">
-            <div>
-              <div class="review-date">{{ item.review_date }}</div>
-              <div v-if="item.related_trade_group_display" class="review-linked-trade">
-                {{ item.related_trade_group_display.symbol }} · {{ item.related_trade_group_display.trade_date }} · {{ item.related_trade_group_display.status }}
-              </div>
-            </div>
+            <div><div class="review-date">{{ item.review_date }}</div><div class="review-linked-trade">{{ (item.related_trade_groups_display || []).map(t => t.symbol).join(', ') || 'No linked trades' }}</div></div>
             <span class="accordion-indicator">{{ expandedReviewIds.includes(item.id) ? '−' : '+' }}</span>
           </button>
-
           <div v-if="expandedReviewIds.includes(item.id)" class="accordion-body">
             <div class="journal-entry-grid">
-              <div><strong>Strategy</strong><div class="journal-entry-content">{{ item.strategy || '-' }}</div></div>
-              <div><strong>Market</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.market_summary || '-'"></textarea></div>
-              <div><strong>Emotions</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.emotions || '-'"></textarea></div>
-              <div><strong>Thesis</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.thesis || '-'"></textarea></div>
-              <div><strong>Entry Logic</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.entry_logic || '-'"></textarea></div>
-              <div><strong>Exit Logic</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.exit_logic || '-'"></textarea></div>
-              <div><strong>Lessons</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.lessons || '-'"></textarea></div>
-              <div><strong>Next Day</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.next_day_plan || '-'"></textarea></div>
+              <div><strong>Regime/Bias</strong><div class="journal-entry-content">{{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }}</div></div>
+              <div><strong>Summary</strong><textarea class="journal-entry-content journal-entry-content-resizable" readonly :value="item.market_summary || '-'"></textarea></div>
             </div>
-            <div class="journal-inline-actions">
-              <button class="secondary small-btn" @click="editReview(item)">Edit</button>
-              <button class="secondary small-btn" @click="removeReview(item.id)">Delete</button>
-              <router-link v-if="item.related_trade_group_display" class="inline-link" :to="`/trades/${item.related_trade_group_display.id}`">Open linked trade</router-link>
-            </div>
-            <div v-if="item.images?.length" class="image-grid compact-image-grid">
-              <a v-for="img in item.images" :key="img.id" :href="img.image_url" target="_blank" class="image-link-card">
-                <img :src="img.image_url" alt="review image" class="image-preview" />
-              </a>
-            </div>
+            <div class="journal-inline-actions"><button class="secondary small-btn" @click="editReview(item)">Edit</button><button class="secondary small-btn" @click="removeReview(item.id)">Delete</button></div>
           </div>
         </div>
-        <div v-if="!reviews.length" class="empty-row">No journal entries yet.</div>
-        <PaginationControls :count="totalCount" :current-page="page" :page-size="20" @change="loadReviews" />
       </section>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { createDailyReview, updateDailyReview, deleteDailyReview, fetchDailyReviews, fetchDailyReviewTradeOptions, uploadDailyReviewImages } from '../api/journal'
 import { fetchStrategyOptions } from '../api/common'
-import PaginationControls from '../components/PaginationControls.vue'
 
-const JOURNAL_EXPANDED_KEY = 'journal-expanded-v100'
 const loading = ref(false)
 const uploading = ref(false)
 const reviews = ref([])
 const tradeOptions = ref([])
-const page = ref(1)
-const totalCount = ref(0)
-const listDateFromFilter = ref('')
-const listDateToFilter = ref('')
-const listStrategySelect = ref('')
 const strategyOptions = ref([])
 const expandedReviewIds = ref([])
 const editingId = ref(null)
-const journalTab = ref('entry')
 const dateInputRef = ref(null)
-const listDateFromInputRef = ref(null)
-const listDateToInputRef = ref(null)
-const freshForm = () => ({
-  review_date: new Date().toISOString().slice(0, 10),
-  related_trade_group: null,
-  image_urls: [],
-  strategy: '',
-  market_summary: '',
-  emotions: '',
-  thesis: '',
-  entry_logic: '',
-  exit_logic: '',
-  lessons: '',
-  next_day_plan: '',
-})
+const freshForm = () => ({ review_date: new Date().toISOString().slice(0, 10), related_trade_groups: [], image_urls: [], strategy: '', market_summary: '', lessons: '', next_day_plan: '', market_regime: '', key_levels_catalyst: '', watchlist: '', daily_bias: '', max_daily_loss_respected: null, discipline_score: null, emotional_control_score: null, biggest_mistake: '' })
 const form = ref(freshForm())
-const savingLabel = computed(() => {
-  if (loading.value) return editingId.value ? 'Updating...' : 'Saving...'
-  if (uploading.value) return 'Uploading...'
-  return editingId.value ? 'Update Journal' : 'Save Journal'
-})
+const maxLossSelection = ref('')
+
+watch(maxLossSelection, (value) => { form.value.max_daily_loss_respected = value === '' ? null : value === 'true' })
+const savingLabel = computed(() => (loading.value ? (editingId.value ? 'Updating...' : 'Saving...') : uploading.value ? 'Uploading...' : editingId.value ? 'Update Review' : 'Save Review'))
 const activeStrategyOptions = computed(() => strategyOptions.value.filter((item) => item.is_active))
 
-function openDatePicker() {
-  const dateInput = dateInputRef.value
-  if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
-}
-function openListDatePicker(type) {
-  const dateInput = type === 'from' ? listDateFromInputRef.value : listDateToInputRef.value
-  if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
-}
-
-function restoreExpandedState() {
-  try { expandedReviewIds.value = JSON.parse(localStorage.getItem(JOURNAL_EXPANDED_KEY) || '[]') } catch { expandedReviewIds.value = [] }
-}
-function persistExpandedState() { localStorage.setItem(JOURNAL_EXPANDED_KEY, JSON.stringify(expandedReviewIds.value)) }
-
-async function loadReviews(nextPage = 1) {
-  page.value = nextPage
-  const params = { page: page.value }
-  if (listDateFromFilter.value) params.date_from = listDateFromFilter.value
-  if (listDateToFilter.value) params.date_to = listDateToFilter.value
-  if (listStrategySelect.value) params.strategy = listStrategySelect.value
-  const res = await fetchDailyReviews(params)
-  reviews.value = res.data.results || []
-  totalCount.value = res.data.count || reviews.value.length
-}
-
-async function loadStrategyOptions() {
-  try {
-    const res = await fetchStrategyOptions()
-    strategyOptions.value = (res.data?.results || res.data || []).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
-  } catch (err) {
-    strategyOptions.value = []
-    console.warn('Failed to load strategy options:', err)
-  }
-}
-
-async function loadTradeOptions() {
-  if (!form.value.review_date) return
-  const res = await fetchDailyReviewTradeOptions(form.value.review_date)
-  tradeOptions.value = res.data || []
-  const ids = new Set(tradeOptions.value.map(item => item.id))
-  if (form.value.related_trade_group !== null && !ids.has(form.value.related_trade_group)) form.value.related_trade_group = null
-}
-async function handleFileUpload(event) {
-  const files = event.target.files
-  if (!files?.length) return
-  uploading.value = true
-  try {
-    const res = await uploadDailyReviewImages(files)
-    const urls = res.data.image_urls || (res.data.image_url ? [res.data.image_url] : [])
-    form.value.image_urls = [...form.value.image_urls, ...urls]
-  } finally {
-    uploading.value = false
-    event.target.value = ''
-  }
-}
+function toggleTradeGroup(id) { const set = new Set(form.value.related_trade_groups); if (set.has(id)) set.delete(id); else set.add(id); form.value.related_trade_groups = Array.from(set) }
+async function loadReviews() { const res = await fetchDailyReviews({ page_size: 100 }); reviews.value = res.data.results || [] }
+async function loadStrategyOptions() { try { const res = await fetchStrategyOptions(); strategyOptions.value = (res.data?.results || res.data || []).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name)) } catch { strategyOptions.value = [] } }
+async function loadTradeOptions() { if (!form.value.review_date) return; const res = await fetchDailyReviewTradeOptions(form.value.review_date); tradeOptions.value = res.data || [] }
+async function handleFileUpload(event) { const files = event.target.files; if (!files?.length) return; uploading.value = true; try { const res = await uploadDailyReviewImages(files); const urls = res.data.image_urls || (res.data.image_url ? [res.data.image_url] : []); form.value.image_urls = [...form.value.image_urls, ...urls] } finally { uploading.value = false; event.target.value = '' } }
 function clearImages() { form.value.image_urls = [] }
 function removeImage(idx) { form.value.image_urls.splice(idx, 1) }
-function toggleReview(id) {
-  const set = new Set(expandedReviewIds.value)
-  if (set.has(id)) set.delete(id)
-  else set.add(id)
-  expandedReviewIds.value = Array.from(set)
-  persistExpandedState()
-}
-function editReview(item) {
-  editingId.value = item.id
-  form.value = {
-    review_date: item.review_date,
-    related_trade_group: item.related_trade_group ?? null,
-    image_urls: (item.images || []).map(img => img.image_url),
-    market_summary: item.market_summary || '',
-    emotions: item.emotions || '',
-    strategy: item.strategy || '',
-    thesis: item.thesis || '',
-    entry_logic: item.entry_logic || '',
-    exit_logic: item.exit_logic || '',
-    lessons: item.lessons || '',
-    next_day_plan: item.next_day_plan || '',
-  }
-  journalTab.value = 'entry'
-  loadTradeOptions()
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-function cancelEdit() {
-  editingId.value = null
-  form.value = freshForm()
-  loadTradeOptions()
-}
+function toggleReview(id) { expandedReviewIds.value = expandedReviewIds.value.includes(id) ? expandedReviewIds.value.filter(v => v !== id) : [...expandedReviewIds.value, id] }
+function editReview(item) { editingId.value = item.id; form.value = { ...freshForm(), ...item, related_trade_groups: (item.related_trade_groups || []).slice(), image_urls: (item.images || []).map(img => img.image_url) }; maxLossSelection.value = item.max_daily_loss_respected == null ? '' : String(item.max_daily_loss_respected); loadTradeOptions() }
+function cancelEdit() { editingId.value = null; form.value = freshForm(); maxLossSelection.value = ''; loadTradeOptions() }
+async function removeReview(id) { if (!window.confirm('Delete this review?')) return; await deleteDailyReview(id); if (editingId.value === id) cancelEdit(); await loadReviews() }
+async function submitReview() { loading.value = true; try { if (editingId.value) await updateDailyReview(editingId.value, form.value); else await createDailyReview(form.value); cancelEdit(); await loadReviews() } finally { loading.value = false } }
 
-async function removeReview(id) {
-  if (!window.confirm('Delete this journal entry?')) return
-  await deleteDailyReview(id)
-  if (editingId.value === id) cancelEdit()
-  await loadReviews(page.value)
-}
-async function submitReview() {
-  loading.value = true
-  try {
-    if (editingId.value) await updateDailyReview(editingId.value, form.value)
-    else await createDailyReview(form.value)
-    const selectedDate = form.value.review_date
-    cancelEdit()
-    listDateFromFilter.value = selectedDate
-    listDateToFilter.value = selectedDate
-    await loadReviews(1)
-  } catch (err) {
-    alert(err?.response?.data?.detail || 'Save failed')
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(async () => {
-  restoreExpandedState()
-  await loadStrategyOptions()
-  await loadTradeOptions()
-  await loadReviews(1)
-})
+onMounted(async () => { await loadStrategyOptions(); await loadTradeOptions(); await loadReviews() })
 </script>
