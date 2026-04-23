@@ -238,6 +238,10 @@
           <div v-for="row in analytics.by_session" :key="`ss-${row.key}`" class="review-item">
             {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
           </div>
+          <label :title="fieldHint('hold_overnight')"><span>Why hold overnight</span><textarea v-model="positionForms[item.trade_group_id].carry_reason" rows="2"></textarea></label>
+          <label :title="fieldHint('risk_tomorrow')"><span>Risk tomorrow</span><textarea v-model="positionForms[item.trade_group_id].gap_risk_note" rows="2"></textarea></label>
+          <label :title="fieldHint('next_action')"><span>Next action</span><textarea v-model="positionForms[item.trade_group_id].next_session_plan" rows="2"></textarea></label>
+          <div class="filter-action-row"><button @click="saveCheckpoint(item.trade_group_id)" :disabled="savingPosition === item.trade_group_id">{{ savingPosition === item.trade_group_id ? 'Saving...' : 'Save Checkpoint' }}</button></div>
         </div>
       </div>
       <div>
@@ -672,6 +676,7 @@ async function saveDailyReview(mode = 'draft') {
   } finally {
     savingDaily.value = false
   }
+  positionSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function focusFirstPending() {
