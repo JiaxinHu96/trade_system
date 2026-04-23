@@ -17,7 +17,7 @@
 
     <template v-if="journalTab === 'workspace'">
     <section class="card">
-      <div class="journal-form-grid">
+      <div class="journal-form-grid workspace-summary-grid">
         <label><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" /></label>
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Open Positions</div><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
@@ -101,14 +101,14 @@
         <button :class="['tv-subtab', { active: dailyAccordion === 'tags' }]" @click="dailyAccordion='tags'">Tags & Save</button>
       </div>
 
-      <div v-if="dailyAccordion === 'context'" class="journal-form-grid">
+      <div v-if="dailyAccordion === 'context'" class="journal-form-grid workspace-field-grid">
         <label><span>Market Regime</span><input v-model="form.market_regime" /></label>
         <label><span>Daily Bias</span><input v-model="form.daily_bias" /></label>
         <label><span>Session Focus</span><select v-model="form.session"><option value="">-</option><option>open</option><option>midday</option><option>close</option><option>overnight</option></select></label>
         <label><span>Market condition</span><select v-model="form.market_condition"><option value="">-</option><option>trend</option><option>range</option><option>breakout</option><option>reversal</option><option>news</option></select></label>
       </div>
 
-      <div v-if="dailyAccordion === 'execution'" class="journal-form-grid">
+      <div v-if="dailyAccordion === 'execution'" class="journal-form-grid workspace-field-grid">
         <label><span>Strategy focus</span><input v-model="form.strategy" /></label>
         <label><span>Conviction today (1-10)</span><input type="number" min="1" max="10" v-model.number="form.confidence_score" /></label>
         <label><span>Discipline (1-10)</span><input type="number" min="1" max="10" v-model.number="form.discipline_score" /></label>
@@ -167,7 +167,7 @@
 
     <section v-else class="card">
       <div class="section-title">Journal Timeline</div>
-      <div class="journal-form-grid">
+      <div class="journal-form-grid timeline-filter-grid">
         <label><span>Date From</span><input v-model="timelineDateFrom" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
         <label><span>Date To</span><input v-model="timelineDateTo" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
         <button class="secondary" @click="loadTimeline">Refresh</button>
@@ -434,3 +434,42 @@ onMounted(async () => {
   nextTick(() => focusFirstPending())
 })
 </script>
+
+<style scoped>
+.workspace-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 220px));
+  gap: 10px 14px;
+  align-items: end;
+}
+
+.workspace-field-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
+  gap: 10px 16px;
+}
+
+.workspace-field-grid label,
+.workspace-summary-grid label {
+  gap: 6px;
+}
+
+.workspace-field-grid :deep(input),
+.workspace-field-grid :deep(select),
+.workspace-summary-grid :deep(input),
+.timeline-filter-grid :deep(input) {
+  padding: 8px 10px;
+}
+
+.timeline-filter-grid {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 260px));
+  gap: 10px 12px;
+  align-items: end;
+}
+
+@media (max-width: 900px) {
+  .workspace-summary-grid,
+  .workspace-field-grid,
+  .timeline-filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
