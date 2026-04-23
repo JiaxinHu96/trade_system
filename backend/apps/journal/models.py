@@ -19,7 +19,13 @@ class MistakeTag(models.Model):
 
 
 class DailyReview(models.Model):
+    REVIEW_STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('completed', 'Completed'),
+    ]
+
     review_date = models.DateField(default=timezone.localdate, db_index=True)
+    review_status = models.CharField(max_length=16, choices=REVIEW_STATUS_CHOICES, default='draft')
     strategy = models.CharField(max_length=128, blank=True, default='')
     market_summary = models.TextField(blank=True, default='')
     emotions = models.TextField(blank=True, default='')

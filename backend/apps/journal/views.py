@@ -42,6 +42,16 @@ def _trade_review_schema_ready():
     return _trade_review_column_exists('would_take_again')
 
 
+def _daily_review_column_exists(column_name):
+    table_name = DailyReview._meta.db_table
+    with connection.cursor() as cursor:
+        columns = {
+            item.name
+            for item in connection.introspection.get_table_description(cursor, table_name)
+        }
+    return column_name in columns
+
+
 class DailyReviewViewSet(viewsets.ModelViewSet):
     queryset = DailyReview.objects.all().order_by('-review_date', '-updated_at')
     serializer_class = DailyReviewSerializer
@@ -176,7 +186,13 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
         summary = {
             'closed_trade_count': len(closed_trade_cards),
             'open_position_count': len(open_position_cards),
-            'daily_review_completed': bool(daily_review),
+            'daily_review_completed': bool(
+                daily_review and (
+                    daily_review.review_status == 'completed'
+                    if _daily_review_column_exists('review_status')
+                    else True
+                )
+            ),
         }
 
         return Response({

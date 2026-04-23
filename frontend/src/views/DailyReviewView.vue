@@ -127,9 +127,22 @@
         <div><span>Daily Mistake Tags</span><div class="chip-wrap">
           <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (form.mistake_tags || []).includes(tag.id) }]" @click="toggleDailyMistakeTag(tag.id)">{{ tag.name }}</button>
         </div></div>
+        <label>
+          <span>Daily Session Screenshots</span>
+          <div class="helper-row">
+            <input type="file" accept="image/*" multiple @change="uploadDailyScreenshots" />
+            <span class="muted-copy" v-if="uploadingDailyImage">Uploading...</span>
+          </div>
+        </label>
+        <div v-if="form.image_urls?.length" class="image-grid compact-image-grid">
+          <div v-for="(url, idx) in form.image_urls" :key="`${url}-${idx}`" class="image-tile">
+            <img :src="url" alt="daily screenshot" class="image-preview" />
+            <button type="button" class="secondary small-btn" @click="removeDailyScreenshot(idx)">Remove</button>
+          </div>
+        </div>
         <div class="filter-action-row">
-          <button @click="saveDailyReview" :disabled="savingDaily">{{ savingDaily ? 'Saving...' : 'Save Draft' }}</button>
-          <button class="secondary" @click="saveDailyReview">Mark Complete</button>
+          <button @click="saveDailyReview('draft')" :disabled="savingDaily">{{ savingDaily ? 'Saving...' : 'Save Draft' }}</button>
+          <button class="secondary" @click="saveDailyReview('completed')" :disabled="savingDaily">Mark Complete</button>
         </div>
       </div>
     </section>
@@ -194,6 +207,7 @@ const savingTrade = ref(null)
 const savingDaily = ref(false)
 const savingPosition = ref(null)
 const uploadingTrade = ref(null)
+const uploadingDailyImage = ref(false)
 const maxLossSelection = ref('')
 const tradeSectionRef = ref(null)
 const dailySectionRef = ref(null)
@@ -202,7 +216,7 @@ const dailyTimeline = ref([])
 const timelineDateFrom = ref('')
 const timelineDateTo = ref('')
 
-const form = ref({ review_date: queueDate.value, strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [] })
+const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
 const completionRate = computed(() => {
   const total = (queue.value.summary.closed_trade_count || 0) + (queue.value.summary.open_position_count || 0) + 1
@@ -269,12 +283,13 @@ function hydratePositionForms(positions) {
 
 function hydrateDailyReview(dailyReview) {
   if (!dailyReview) {
-    form.value = { review_date: queueDate.value, strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id), session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [] }
+    form.value = { review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id), session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] }
     maxLossSelection.value = ''
     return
   }
   form.value = {
     review_date: queueDate.value,
+    review_status: dailyReview.review_status || 'draft',
     strategy: dailyReview.strategy || '',
     market_regime: dailyReview.market_regime || '',
     daily_bias: dailyReview.daily_bias || '',
@@ -290,6 +305,7 @@ function hydrateDailyReview(dailyReview) {
     emotional_control_score: dailyReview.emotional_control_score,
     max_daily_loss_respected: dailyReview.max_daily_loss_respected,
     mistake_tags: dailyReview.mistake_tags || [],
+    image_urls: (dailyReview.images || []).map((item) => item.image_url),
   }
   maxLossSelection.value = dailyReview.max_daily_loss_respected == null ? '' : String(dailyReview.max_daily_loss_respected)
 }
@@ -362,10 +378,31 @@ async function saveCheckpoint(tradeGroupId) {
   }
 }
 
-async function saveDailyReview() {
+async function uploadDailyScreenshots(event) {
+  const files = event?.target?.files
+  if (!files?.length) return
+  uploadingDailyImage.value = true
+  try {
+    const res = await uploadDailyReviewImages(files)
+    const urls = res.data?.image_urls || (res.data?.image_url ? [res.data.image_url] : [])
+    form.value.image_urls = [...(form.value.image_urls || []), ...urls]
+  } finally {
+    uploadingDailyImage.value = false
+    if (event?.target) event.target.value = ''
+  }
+}
+
+function removeDailyScreenshot(index) {
+  const arr = [...(form.value.image_urls || [])]
+  arr.splice(index, 1)
+  form.value.image_urls = arr
+}
+
+async function saveDailyReview(mode = 'draft') {
   savingDaily.value = true
   try {
     const payload = { ...form.value, review_date: queueDate.value }
+    payload.review_status = mode
     payload.max_daily_loss_respected = maxLossSelection.value === '' ? null : maxLossSelection.value === 'true'
     await createDailyReview(payload)
     await loadQueue()
