@@ -18,7 +18,7 @@
     <template v-if="journalTab === 'workspace'">
     <section class="card">
       <div class="journal-form-grid workspace-summary-grid">
-        <label><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" /></label>
+        <label :title="fieldHint('queue_date')"><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" /></label>
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Open Positions</div><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Daily Review</div><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
@@ -56,30 +56,30 @@
 
           <div v-if="expandedCards.includes(card.trade_group_id)" class="accordion-body compact-trade-body">
             <div class="journal-form-grid trade-review-form-grid">
-              <label><span>Strategy</span><input v-model="tradeReviewForms[card.trade_group_id].strategy" /></label>
-              <label><span class="label-with-tip">Setup<span class="field-tip">Setup=交易形态/模式（如 Breakout、Pullback）。</span></span>
+              <label :title="fieldHint('trade_strategy')"><span>Strategy</span><input v-model="tradeReviewForms[card.trade_group_id].strategy" /></label>
+              <label :title="fieldHint('setup')"><span>Setup</span>
                 <select v-model="tradeReviewForms[card.trade_group_id].setup">
                   <option :value="null">-</option>
                   <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
                 </select>
               </label>
-              <label><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
-              <label><span>Would take again</span><select v-model="tradeReviewForms[card.trade_group_id].would_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
-              <label><span class="label-with-tip">Entry Q<span class="field-tip">1-5分：入场质量，5=非常理想。</span></span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /></label>
-              <label><span class="label-with-tip">Exit Q<span class="field-tip">1-5分：出场执行质量，5=非常理想。</span></span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /></label>
-              <label><span class="label-with-tip">Risk Q<span class="field-tip">1-5分：风险控制质量（仓位/止损执行）。</span></span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /></label>
-              <label><span>Followed plan</span><select v-model="tradeReviewForms[card.trade_group_id].followed_plan"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
+              <label :title="fieldHint('grade')"><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
+              <label :title="fieldHint('would_take_again')"><span>Would take again</span><select v-model="tradeReviewForms[card.trade_group_id].would_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
+              <label :title="fieldHint('entry_q')"><span>Entry Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /></label>
+              <label :title="fieldHint('exit_q')"><span>Exit Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /></label>
+              <label :title="fieldHint('risk_q')"><span>Risk Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /></label>
+              <label :title="fieldHint('followed_plan')"><span>Followed plan</span><select v-model="tradeReviewForms[card.trade_group_id].followed_plan"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
             </div>
             <div class="trade-review-text-grid">
-              <label><span>Thesis</span><textarea v-model="tradeReviewForms[card.trade_group_id].thesis" rows="2"></textarea></label>
-              <label><span>What to improve</span><textarea v-model="tradeReviewForms[card.trade_group_id].what_to_improve" rows="2"></textarea></label>
+              <label :title="fieldHint('thesis')"><span>Thesis</span><textarea v-model="tradeReviewForms[card.trade_group_id].thesis" rows="2"></textarea></label>
+              <label :title="fieldHint('what_to_improve')"><span>What to improve</span><textarea v-model="tradeReviewForms[card.trade_group_id].what_to_improve" rows="2"></textarea></label>
             </div>
 
-            <div><span class="label-with-tip">Mistake Tags<span class="field-tip">本笔交易出现的问题标签，可多选。</span></span><div class="chip-wrap">
+            <div :title="fieldHint('mistake_tags')"><span>Mistake Tags</span><div class="chip-wrap">
               <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (tradeReviewForms[card.trade_group_id].mistake_tags || []).includes(tag.id) }]" @click="toggleTradeMistakeTag(card.trade_group_id, tag.id)">{{ tag.name }}</button>
             </div></div>
 
-            <label>
+            <label :title="fieldHint('screenshots')">
               <span>Screenshots</span>
               <div class="helper-row">
                 <input type="file" accept="image/*" multiple @change="uploadTradeScreenshots(card.trade_group_id, $event)" />
@@ -115,32 +115,32 @@
       </div>
 
       <div v-if="dailyAccordion === 'context'" class="journal-form-grid workspace-field-grid">
-        <label><span>Market Regime</span><input v-model="form.market_regime" /></label>
-        <label><span>Daily Bias</span><input v-model="form.daily_bias" /></label>
-        <label><span>Session Focus</span><select v-model="form.session"><option value="">-</option><option>open</option><option>midday</option><option>close</option><option>overnight</option></select></label>
-        <label><span>Market condition</span><select v-model="form.market_condition"><option value="">-</option><option>trend</option><option>range</option><option>breakout</option><option>reversal</option><option>news</option></select></label>
+        <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="form.market_regime" /></label>
+        <label :title="fieldHint('daily_bias')"><span>Daily Bias</span><input v-model="form.daily_bias" /></label>
+        <label :title="fieldHint('session_focus')"><span>Session Focus</span><select v-model="form.session"><option value="">-</option><option>open</option><option>midday</option><option>close</option><option>overnight</option></select></label>
+        <label :title="fieldHint('market_condition')"><span>Market condition</span><select v-model="form.market_condition"><option value="">-</option><option>trend</option><option>range</option><option>breakout</option><option>reversal</option><option>news</option></select></label>
       </div>
 
       <div v-if="dailyAccordion === 'execution'" class="journal-form-grid workspace-field-grid">
-        <label><span>Strategy focus</span><input v-model="form.strategy" /></label>
-        <label><span>Conviction today (1-10)</span><input type="number" min="1" max="10" v-model.number="form.confidence_score" /></label>
-        <label><span>Discipline (1-10)</span><input type="number" min="1" max="10" v-model.number="form.discipline_score" /></label>
-        <label><span>Emotional control (1-10)</span><input type="number" min="1" max="10" v-model.number="form.emotional_control_score" /></label>
-        <label><span>Max daily loss respected</span><select v-model="maxLossSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
+        <label :title="fieldHint('strategy_focus')"><span>Strategy focus</span><input v-model="form.strategy" /></label>
+        <label :title="fieldHint('conviction')"><span>Conviction today (1-10)</span><input type="number" min="1" max="10" v-model.number="form.confidence_score" /></label>
+        <label :title="fieldHint('discipline')"><span>Discipline (1-10)</span><input type="number" min="1" max="10" v-model.number="form.discipline_score" /></label>
+        <label :title="fieldHint('emotional_control')"><span>Emotional control (1-10)</span><input type="number" min="1" max="10" v-model.number="form.emotional_control_score" /></label>
+        <label :title="fieldHint('max_daily_loss')"><span>Max daily loss respected</span><select v-model="maxLossSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
       </div>
 
       <div v-if="dailyAccordion === 'lesson'" class="journal-text-grid">
-        <label><span>Market Summary</span><textarea v-model="form.market_summary" rows="3"></textarea></label>
-        <label><span>Biggest Mistake</span><textarea v-model="form.biggest_mistake" rows="3"></textarea></label>
-        <label><span>Main Lesson</span><textarea v-model="form.lessons" rows="3"></textarea></label>
-        <label><span>Tomorrow Plan</span><textarea v-model="form.next_day_plan" rows="3"></textarea></label>
+        <label :title="fieldHint('market_summary')"><span>Market Summary</span><textarea v-model="form.market_summary" rows="3"></textarea></label>
+        <label :title="fieldHint('biggest_mistake')"><span>Biggest Mistake</span><textarea v-model="form.biggest_mistake" rows="3"></textarea></label>
+        <label :title="fieldHint('main_lesson')"><span>Main Lesson</span><textarea v-model="form.lessons" rows="3"></textarea></label>
+        <label :title="fieldHint('tomorrow_plan')"><span>Tomorrow Plan</span><textarea v-model="form.next_day_plan" rows="3"></textarea></label>
       </div>
 
       <div v-if="dailyAccordion === 'tags'">
-        <div><span>Daily Mistake Tags</span><div class="chip-wrap">
+        <div :title="fieldHint('daily_mistake_tags')"><span>Daily Mistake Tags</span><div class="chip-wrap">
           <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (form.mistake_tags || []).includes(tag.id) }]" @click="toggleDailyMistakeTag(tag.id)">{{ tag.name }}</button>
         </div></div>
-        <label>
+        <label :title="fieldHint('daily_screenshots')">
           <span>Daily Session Screenshots</span>
           <div class="helper-row">
             <input type="file" accept="image/*" multiple @change="uploadDailyScreenshots" />
@@ -167,11 +167,11 @@
         <div class="journal-entry-head"><div><strong>{{ item.symbol }}</strong> · Qty {{ item.open_qty }} · Avg cost {{ item.avg_open_cost || '-' }}</div><button class="secondary small-btn" @click="togglePosition(item.trade_group_id)">{{ expandedPositions.includes(item.trade_group_id) ? 'Close' : 'Checkpoint' }}</button></div>
         <div v-if="expandedPositions.includes(item.trade_group_id)" class="accordion-body">
           <div class="journal-form-grid">
-            <label><span>Thesis status</span><select v-model="positionForms[item.trade_group_id].status"><option value="open">still valid</option><option value="reduced">weakened</option><option value="closed">invalid</option></select></label>
+            <label :title="fieldHint('thesis_status')"><span>Thesis status</span><select v-model="positionForms[item.trade_group_id].status"><option value="open">still valid</option><option value="reduced">weakened</option><option value="closed">invalid</option></select></label>
           </div>
-          <label><span>Why hold overnight</span><textarea v-model="positionForms[item.trade_group_id].carry_reason" rows="2"></textarea></label>
-          <label><span>Risk tomorrow</span><textarea v-model="positionForms[item.trade_group_id].gap_risk_note" rows="2"></textarea></label>
-          <label><span>Next action</span><textarea v-model="positionForms[item.trade_group_id].next_session_plan" rows="2"></textarea></label>
+          <label :title="fieldHint('hold_overnight')"><span>Why hold overnight</span><textarea v-model="positionForms[item.trade_group_id].carry_reason" rows="2"></textarea></label>
+          <label :title="fieldHint('risk_tomorrow')"><span>Risk tomorrow</span><textarea v-model="positionForms[item.trade_group_id].gap_risk_note" rows="2"></textarea></label>
+          <label :title="fieldHint('next_action')"><span>Next action</span><textarea v-model="positionForms[item.trade_group_id].next_session_plan" rows="2"></textarea></label>
           <div class="filter-action-row"><button @click="saveCheckpoint(item.trade_group_id)" :disabled="savingPosition === item.trade_group_id">{{ savingPosition === item.trade_group_id ? 'Saving...' : 'Save Checkpoint' }}</button></div>
         </div>
       </div>
@@ -181,8 +181,8 @@
     <section v-else class="card">
       <div class="section-title">Journal Timeline</div>
       <div class="journal-form-grid timeline-filter-grid">
-        <label><span>Date From</span><input v-model="timelineDateFrom" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
-        <label><span>Date To</span><input v-model="timelineDateTo" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
+        <label :title="fieldHint('date_from')"><span>Date From</span><input v-model="timelineDateFrom" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
+        <label :title="fieldHint('date_to')"><span>Date To</span><input v-model="timelineDateTo" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
         <button class="secondary" @click="loadTimeline">Refresh</button>
       </div>
       <div v-if="!dailyTimeline.length" class="empty-row">No daily reviews yet.</div>
@@ -239,6 +239,47 @@ const completionRate = computed(() => {
   const doneDaily = queue.value.summary.daily_review_completed ? 1 : 0
   return total ? Math.round(((doneTrades + donePositions + doneDaily) / total) * 100) : 0
 })
+
+const FIELD_HINTS = {
+  queue_date: '选择要处理复盘队列的交易日期。',
+  trade_strategy: '本笔交易使用的策略名称/方向。',
+  setup: '交易形态/模式（如 Breakout、Pullback）。',
+  grade: '本笔交易综合评级（A最好）。',
+  would_take_again: '如果再来一次，你是否还会做这笔交易。',
+  entry_q: '1-5分：入场质量，5=非常理想。',
+  exit_q: '1-5分：出场执行质量，5=非常理想。',
+  risk_q: '1-5分：风险控制质量（仓位/止损执行）。',
+  followed_plan: '是否按原计划执行。',
+  thesis: '这笔交易的核心逻辑与依据。',
+  what_to_improve: '这笔交易后续可改进点。',
+  mistake_tags: '本笔交易出现的问题标签（可多选）。',
+  screenshots: '上传该笔交易相关截图，用于复盘留档。',
+  market_regime: '当天主要市场环境（趋势/震荡等）。',
+  daily_bias: '当日主观偏向（看多/看空/中性）。',
+  session_focus: '复盘重点所在时段（开盘/中段/尾盘等）。',
+  market_condition: '当天更细的行情状态标签。',
+  strategy_focus: '当天重点执行的策略主题。',
+  conviction: '1-10分：当日交易信念强度。',
+  discipline: '1-10分：纪律执行程度。',
+  emotional_control: '1-10分：情绪控制程度。',
+  max_daily_loss: '是否遵守了日亏损上限。',
+  market_summary: '对市场表现的简要总结。',
+  biggest_mistake: '当天最关键的错误。',
+  main_lesson: '当天最重要的经验教训。',
+  tomorrow_plan: '次日执行计划。',
+  daily_mistake_tags: '当天层面的错误标签（可多选）。',
+  daily_screenshots: '上传当日复盘截图。',
+  thesis_status: '隔夜持仓原始逻辑当前是否仍成立。',
+  hold_overnight: '继续持仓到次日的原因。',
+  risk_tomorrow: '次日可能面临的主要风险。',
+  next_action: '次日计划动作（持有/减仓/平仓条件）。',
+  date_from: '时间线起始日期。',
+  date_to: '时间线结束日期。',
+}
+
+function fieldHint(key) {
+  return FIELD_HINTS[key] || ''
+}
 
 function toggleCard(id) { expandedCards.value = expandedCards.value.includes(id) ? expandedCards.value.filter((v) => v !== id) : [...expandedCards.value, id] }
 function togglePosition(id) { expandedPositions.value = expandedPositions.value.includes(id) ? expandedPositions.value.filter((v) => v !== id) : [...expandedPositions.value, id] }
@@ -545,18 +586,11 @@ onMounted(async () => {
   min-height: 72px;
 }
 
-.label-with-tip,
 .metric-with-tip {
   position: relative;
   display: inline-flex;
   align-items: center;
 }
-
-.label-with-tip {
-  cursor: help;
-}
-
-.field-tip,
 .metric-tip {
   position: absolute;
   left: 0;
@@ -577,7 +611,6 @@ onMounted(async () => {
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.label-with-tip:hover .field-tip,
 .metric-with-tip:hover .metric-tip {
   opacity: 1;
   transform: translateY(0);
