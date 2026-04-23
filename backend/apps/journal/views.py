@@ -15,11 +15,13 @@ from rest_framework.views import APIView
 
 from apps.trades.models import RawIBKRExecution
 from apps.trades.models import TradeGroup
-from .models import DailyReview, MistakeTag, PositionCheckpoint, SetupTag, TradeJournal, TradeReview
+from .models import DailyReview, MistakeTag, PositionCheckpoint, PreTradePlan, SetupSnapshot, SetupTag, TradeJournal, TradeReview
 from .serializers import (
     DailyReviewSerializer,
     MistakeTagSerializer,
     PositionCheckpointSerializer,
+    PreTradePlanSerializer,
+    SetupSnapshotSerializer,
     SetupTagSerializer,
     TradeJournalSerializer,
     TradeReviewSerializer,
@@ -320,6 +322,63 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'TradeReview schema is not ready. Please run migrations.'}, status=status.HTTP_409_CONFLICT)
         return super().partial_update(request, *args, **kwargs)
 
+    @action(detail=False, methods=['get'], url_path='analytics-summary')
+    def analytics_summary(self, request):
+        qs = self.get_queryset().select_related('trade_group', 'setup')
+        by_strategy = {}
+        by_session = {}
+        by_symbol = {}
+
+        for item in qs:
+            trade_group = item.trade_group
+            realized_r = float(item.realized_r) if item.realized_r is not None else None
+            hold_minutes = None
+            if trade_group and trade_group.opened_at and trade_group.closed_at:
+                hold_minutes = (trade_group.closed_at - trade_group.opened_at).total_seconds() / 60
+            win = bool(realized_r is not None and realized_r > 0)
+
+            def _accumulate(bucket, key):
+                if not key:
+                    return
+                row = bucket.setdefault(key, {'count': 0, 'wins': 0, 'r_total': 0.0, 'r_count': 0, 'hold_total': 0.0, 'hold_count': 0})
+                row['count'] += 1
+                row['wins'] += 1 if win else 0
+                if realized_r is not None:
+                    row['r_total'] += realized_r
+                    row['r_count'] += 1
+                if hold_minutes is not None:
+                    row['hold_total'] += hold_minutes
+                    row['hold_count'] += 1
+
+            _accumulate(by_strategy, item.strategy or (item.setup.name if item.setup else 'Unknown'))
+            _accumulate(by_session, item.session or 'unknown')
+            _accumulate(by_symbol, trade_group.symbol if trade_group else 'unknown')
+
+        def _finalize(bucket):
+            rows = []
+            for key, val in bucket.items():
+                count = val['count'] or 1
+                avg_r = (val['r_total'] / val['r_count']) if val['r_count'] else None
+                win_rate = (val['wins'] / count) * 100
+                expectancy = avg_r
+                avg_holding_minutes = (val['hold_total'] / val['hold_count']) if val['hold_count'] else None
+                rows.append({
+                    'key': key,
+                    'trades': val['count'],
+                    'win_rate': round(win_rate, 2),
+                    'avg_r': round(avg_r, 4) if avg_r is not None else None,
+                    'expectancy': round(expectancy, 4) if expectancy is not None else None,
+                    'avg_holding_minutes': round(avg_holding_minutes, 2) if avg_holding_minutes is not None else None,
+                })
+            rows.sort(key=lambda x: x['trades'], reverse=True)
+            return rows
+
+        return Response({
+            'by_strategy': _finalize(by_strategy),
+            'by_session': _finalize(by_session),
+            'by_symbol': _finalize(by_symbol),
+        })
+
 
 class PositionCheckpointViewSet(viewsets.ModelViewSet):
     queryset = PositionCheckpoint.objects.select_related('trade_group').all().order_by('-review_date', '-updated_at')
@@ -357,6 +416,36 @@ class MistakeTagViewSet(viewsets.ReadOnlyModelViewSet):
             for name in DEFAULT_MISTAKE_TAGS:
                 MistakeTag.objects.get_or_create(name=name)
         return MistakeTag.objects.all().order_by('name')
+
+
+class PreTradePlanViewSet(viewsets.ModelViewSet):
+    queryset = PreTradePlan.objects.all().order_by('-plan_date', '-updated_at')
+    serializer_class = PreTradePlanSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        plan_date = self.request.query_params.get('date')
+        session = self.request.query_params.get('session')
+        if plan_date:
+            qs = qs.filter(plan_date=plan_date)
+        if session:
+            qs = qs.filter(session=session)
+        return qs
+
+
+class SetupSnapshotViewSet(viewsets.ModelViewSet):
+    queryset = SetupSnapshot.objects.select_related('pretrade_plan', 'setup', 'trade_group').all().order_by('-updated_at', '-id')
+    serializer_class = SetupSnapshotSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        plan_id = self.request.query_params.get('pretrade_plan')
+        symbol = self.request.query_params.get('symbol')
+        if plan_id:
+            qs = qs.filter(pretrade_plan_id=plan_id)
+        if symbol:
+            qs = qs.filter(symbol__iexact=symbol)
+        return qs
 
 
 class DailyReviewImageUploadAPIView(APIView):

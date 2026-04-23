@@ -5,6 +5,8 @@ from .views import (
     DailyReviewViewSet,
     MistakeTagViewSet,
     PositionCheckpointViewSet,
+    PreTradePlanViewSet,
+    SetupSnapshotViewSet,
     SetupTagViewSet,
     TradeJournalViewSet,
     TradeReviewViewSet,
@@ -17,6 +19,8 @@ router.register('trade-reviews', TradeReviewViewSet, basename='trade-review')
 router.register('position-checkpoints', PositionCheckpointViewSet, basename='position-checkpoint')
 router.register('setup-tags', SetupTagViewSet, basename='setup-tag')
 router.register('mistake-tags', MistakeTagViewSet, basename='mistake-tag')
+router.register('pretrade-plans', PreTradePlanViewSet, basename='pretrade-plan')
+router.register('setup-snapshots', SetupSnapshotViewSet, basename='setup-snapshot')
 
 urlpatterns = router.urls + [
     path('daily-review-image-upload/', DailyReviewImageUploadAPIView.as_view(), name='daily-review-image-upload'),

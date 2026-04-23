@@ -5,6 +5,8 @@ from .models import (
     DailyReviewImage,
     MistakeTag,
     PositionCheckpoint,
+    PreTradePlan,
+    SetupSnapshot,
     SetupTag,
     TradeJournal,
     TradeReview,
@@ -149,3 +151,17 @@ class PositionCheckpointSerializer(serializers.ModelSerializer):
             'direction': group.direction,
             'open_qty': group.open_qty,
         }
+
+
+class PreTradePlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PreTradePlan
+        fields = '__all__'
+
+
+class SetupSnapshotSerializer(serializers.ModelSerializer):
+    setup_display = SetupTagSerializer(source='setup', read_only=True)
+
+    class Meta:
+        model = SetupSnapshot
+        fields = '__all__'

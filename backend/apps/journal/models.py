@@ -90,6 +90,27 @@ class TradeJournal(models.Model):
 
 
 class TradeReview(models.Model):
+    MISTAKE_TYPE_CHOICES = [
+        ('none', 'None'),
+        ('discipline', 'Discipline'),
+        ('execution', 'Execution'),
+        ('risk', 'Risk'),
+        ('strategy', 'Strategy'),
+        ('psychology', 'Psychology'),
+        ('process', 'Process'),
+    ]
+    SEVERITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+    RULE_VIOLATION_CHOICES = [
+        ('none', 'None'),
+        ('entry_rule', 'Entry Rule'),
+        ('risk_rule', 'Risk Rule'),
+        ('exit_rule', 'Exit Rule'),
+        ('size_rule', 'Size Rule'),
+    ]
     GRADE_CHOICES = [
         ('A', 'A'),
         ('B', 'B'),
@@ -119,6 +140,9 @@ class TradeReview(models.Model):
     followed_plan = models.BooleanField(null=True, blank=True)
     would_take_again = models.CharField(max_length=32, blank=True, default='')
     mistake_tags = models.ManyToManyField(MistakeTag, blank=True, related_name='trade_reviews')
+    primary_mistake_type = models.CharField(max_length=24, choices=MISTAKE_TYPE_CHOICES, default='none')
+    mistake_severity = models.CharField(max_length=12, choices=SEVERITY_CHOICES, default='low')
+    rule_violation_type = models.CharField(max_length=24, choices=RULE_VIOLATION_CHOICES, default='none')
     emotion_before = models.CharField(max_length=64, blank=True, default='')
     emotion_during = models.CharField(max_length=64, blank=True, default='')
     emotion_after = models.CharField(max_length=64, blank=True, default='')
@@ -154,3 +178,53 @@ class PositionCheckpoint(models.Model):
 
     class Meta:
         ordering = ['-review_date', '-updated_at']
+
+
+class PreTradePlan(models.Model):
+    SESSION_CHOICES = [
+        ('premarket', 'Premarket'),
+        ('open', 'Open'),
+        ('midday', 'Midday'),
+        ('close', 'Close'),
+    ]
+
+    plan_date = models.DateField(default=timezone.localdate, db_index=True)
+    session = models.CharField(max_length=16, choices=SESSION_CHOICES, default='premarket')
+    market_regime = models.CharField(max_length=64, blank=True, default='')
+    watchlist = models.JSONField(default=list, blank=True)
+    catalysts = models.TextField(blank=True, default='')
+    game_plan = models.TextField(blank=True, default='')
+    pre_trade_checklist = models.JSONField(default=dict, blank=True)
+    risk_budget_r = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-plan_date', '-updated_at']
+
+
+class SetupSnapshot(models.Model):
+    pretrade_plan = models.ForeignKey(PreTradePlan, on_delete=models.CASCADE, related_name='setup_snapshots')
+    trade_group = models.OneToOneField(
+        'trades.TradeGroup',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pretrade_snapshot',
+    )
+    symbol = models.CharField(max_length=32)
+    strategy = models.CharField(max_length=128, blank=True, default='')
+    setup = models.ForeignKey(SetupTag, on_delete=models.SET_NULL, null=True, blank=True, related_name='setup_snapshots')
+    trigger_condition = models.TextField(blank=True, default='')
+    invalidation = models.TextField(blank=True, default='')
+    planned_entry = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    planned_stop = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    planned_target = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    checklist_passed = models.BooleanField(default=False)
+    snapshot_notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at', '-id']

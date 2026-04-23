@@ -26,3 +26,8 @@ export const fetchMistakeTags = () => api.get('/journal/mistake-tags/')
 
 export const fetchPositionCheckpoints = (params = {}) => api.get('/journal/position-checkpoints/', { params })
 export const savePositionCheckpoint = (payload) => api.post('/journal/position-checkpoints/', payload)
+export const fetchPretradePlans = (params = {}) => api.get('/journal/pretrade-plans/', { params })
+export const savePretradePlan = (payload) => api.post('/journal/pretrade-plans/', payload)
+export const fetchSetupSnapshots = (params = {}) => api.get('/journal/setup-snapshots/', { params })
+export const saveSetupSnapshot = (payload) => api.post('/journal/setup-snapshots/', payload)
+export const fetchTradeReviewAnalyticsSummary = (params = {}) => api.get('/journal/trade-reviews/analytics-summary/', { params })
