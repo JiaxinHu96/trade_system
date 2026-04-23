@@ -116,11 +116,11 @@
               </label>
               <label class="dashboard-sidebar-field">
                 <span>Date From</span>
-                <input v-model="filters.date_from" type="date" />
+                <input v-model="filters.date_from" type="date" @click="openDatePicker" @focus="openDatePicker" />
               </label>
               <label class="dashboard-sidebar-field">
                 <span>Date To</span>
-                <input v-model="filters.date_to" type="date" />
+                <input v-model="filters.date_to" type="date" @click="openDatePicker" @focus="openDatePicker" />
               </label>
             </div>
             <div v-else class="dashboard-sidebar-loading">
@@ -864,6 +864,11 @@ function cloneTabForPayload(tab) {
 
 function formatPercent(value) {
   return value === null || value === undefined ? '-' : `${value}%`
+}
+
+function openDatePicker(event) {
+  const dateInput = event?.target
+  if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
 }
 
 function toDateInput(date) {

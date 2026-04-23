@@ -18,7 +18,7 @@
     <template v-if="journalTab === 'workspace'">
     <section class="card">
       <div class="journal-form-grid">
-        <label><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" /></label>
+        <label><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" /></label>
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Open Positions</div><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Daily Review</div><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
@@ -168,8 +168,8 @@
     <section v-else class="card">
       <div class="section-title">Journal Timeline</div>
       <div class="journal-form-grid">
-        <label><span>Date From</span><input v-model="timelineDateFrom" type="date" @change="loadTimeline" /></label>
-        <label><span>Date To</span><input v-model="timelineDateTo" type="date" @change="loadTimeline" /></label>
+        <label><span>Date From</span><input v-model="timelineDateFrom" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
+        <label><span>Date To</span><input v-model="timelineDateTo" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
         <button class="secondary" @click="loadTimeline">Refresh</button>
       </div>
       <div v-if="!dailyTimeline.length" class="empty-row">No daily reviews yet.</div>
@@ -228,6 +228,10 @@ const completionRate = computed(() => {
 
 function toggleCard(id) { expandedCards.value = expandedCards.value.includes(id) ? expandedCards.value.filter((v) => v !== id) : [...expandedCards.value, id] }
 function togglePosition(id) { expandedPositions.value = expandedPositions.value.includes(id) ? expandedPositions.value.filter((v) => v !== id) : [...expandedPositions.value, id] }
+function openDatePicker(event) {
+  const dateInput = event?.target
+  if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
+}
 
 function toggleDailyMistakeTag(tagId) {
   const set = new Set(form.value.mistake_tags || [])
