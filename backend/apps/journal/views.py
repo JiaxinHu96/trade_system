@@ -25,6 +25,22 @@ from .serializers import (
     TradeReviewSerializer,
 )
 
+DEFAULT_SETUP_TAGS = [
+    'Breakout',
+    'Pullback',
+    'Reversal',
+    'Range Fade',
+    'Opening Drive',
+]
+
+DEFAULT_MISTAKE_TAGS = [
+    'FOMO Entry',
+    'Late Exit',
+    'Oversized Position',
+    'Ignored Stop',
+    'Overtrading',
+]
+
 
 def _trade_review_column_exists(column_name):
     table_name = TradeReview._meta.db_table
@@ -324,13 +340,23 @@ class PositionCheckpointViewSet(viewsets.ModelViewSet):
 
 
 class SetupTagViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = SetupTag.objects.all().order_by('name')
     serializer_class = SetupTagSerializer
+
+    def get_queryset(self):
+        if not SetupTag.objects.exists():
+            for name in DEFAULT_SETUP_TAGS:
+                SetupTag.objects.get_or_create(name=name)
+        return SetupTag.objects.all().order_by('name')
 
 
 class MistakeTagViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = MistakeTag.objects.all().order_by('name')
     serializer_class = MistakeTagSerializer
+
+    def get_queryset(self):
+        if not MistakeTag.objects.exists():
+            for name in DEFAULT_MISTAKE_TAGS:
+                MistakeTag.objects.get_or_create(name=name)
+        return MistakeTag.objects.all().order_by('name')
 
 
 class DailyReviewImageUploadAPIView(APIView):

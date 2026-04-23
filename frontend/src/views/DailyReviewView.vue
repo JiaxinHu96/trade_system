@@ -58,12 +58,13 @@
                   <option :value="null">-</option>
                   <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
                 </select>
+                <small class="field-help">Setup=这笔交易的形态/模式（如 Breakout、Pullback）。</small>
               </label>
               <label><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
               <label><span>Would take again</span><select v-model="tradeReviewForms[card.trade_group_id].would_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
-              <label><span>Entry Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /></label>
-              <label><span>Exit Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /></label>
-              <label><span>Risk Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /></label>
+              <label><span>Entry Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /><small class="field-help">1-5分：入场质量（越高越好）。</small></label>
+              <label><span>Exit Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /><small class="field-help">1-5分：出场执行质量（越高越好）。</small></label>
+              <label><span>Risk Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /><small class="field-help">1-5分：风险控制质量（止损/仓位）。</small></label>
               <label><span>Followed plan</span><select v-model="tradeReviewForms[card.trade_group_id].followed_plan"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
             </div>
             <div class="trade-review-text-grid">
@@ -73,7 +74,7 @@
 
             <div><span>Mistake Tags</span><div class="chip-wrap">
               <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (tradeReviewForms[card.trade_group_id].mistake_tags || []).includes(tag.id) }]" @click="toggleTradeMistakeTag(card.trade_group_id, tag.id)">{{ tag.name }}</button>
-            </div></div>
+            </div><small class="field-help">Mistake Tags=本笔交易出现的问题标签（可多选）。</small></div>
 
             <label>
               <span>Screenshots</span>
@@ -92,6 +93,9 @@
             <div class="filter-action-row">
               <button @click="saveCardReview(card.trade_group_id)" :disabled="savingTrade === card.trade_group_id">{{ savingTrade === card.trade_group_id ? 'Saving...' : 'Save Trade Review' }}</button>
               <router-link class="inline-link" :to="`/trades/${card.trade_group_id}`">Open Detail</router-link>
+            </div>
+            <div v-if="tradeSaveErrors[card.trade_group_id]" class="save-error">
+              {{ tradeSaveErrors[card.trade_group_id] }}
             </div>
           </div>
         </div>
@@ -214,6 +218,7 @@ const savingDaily = ref(false)
 const savingPosition = ref(null)
 const uploadingTrade = ref(null)
 const uploadingDailyImage = ref(false)
+const tradeSaveErrors = ref({})
 const maxLossSelection = ref('')
 const tradeSectionRef = ref(null)
 const dailySectionRef = ref(null)
@@ -350,11 +355,28 @@ async function openTimelineTab() {
 async function saveCardReview(tradeGroupId) {
   savingTrade.value = tradeGroupId
   try {
-    await saveTradeReview({ ...tradeReviewForms.value[tradeGroupId] })
+    const payload = { ...tradeReviewForms.value[tradeGroupId] }
+    payload.entry_quality = normalizeScore(payload.entry_quality)
+    payload.exit_quality = normalizeScore(payload.exit_quality)
+    payload.risk_management = normalizeScore(payload.risk_management)
+    await saveTradeReview(payload)
+    tradeSaveErrors.value[tradeGroupId] = ''
     await loadQueue()
+  } catch (error) {
+    const data = error?.response?.data || {}
+    tradeSaveErrors.value[tradeGroupId] = Object.entries(data)
+      .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+      .join(' | ') || 'Save failed. Please check required fields.'
   } finally {
     savingTrade.value = null
   }
+}
+
+function normalizeScore(value) {
+  if (value === '' || value == null) return null
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  return Math.min(5, Math.max(1, Math.round(n)))
 }
 
 async function uploadTradeScreenshots(tradeGroupId, event) {
@@ -518,6 +540,18 @@ onMounted(async () => {
 
 .trade-review-text-grid :deep(textarea) {
   min-height: 72px;
+}
+
+.field-help {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.save-error {
+  margin-top: 8px;
+  color: #b91c1c;
+  font-size: 12px;
 }
 
 .timeline-filter-grid {
