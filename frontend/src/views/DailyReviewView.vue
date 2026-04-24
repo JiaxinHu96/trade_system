@@ -384,24 +384,48 @@
         <button class="secondary" @click="loadTimeline">Refresh</button>
       </div>
       <div v-if="!filteredTimeline.length" class="empty-row">No daily reviews matched the filters.</div>
-      <div v-for="item in filteredTimeline" :key="item.id" class="journal-entry-card" style="margin-bottom:10px;">
-        <div class="journal-entry-head" style="justify-content:space-between;">
-          <div>
-            <strong>{{ item.review_date }}</strong>
-            <span class="badge" style="margin-left:8px;">{{ item.review_status || 'draft' }}</span>
+      <div v-for="item in filteredTimeline" :key="item.id" class="journal-entry-card timeline-day-card" style="margin-bottom:10px;">
+        <div class="timeline-header-row">
+          <div class="timeline-header-left">
+            <strong>📅 {{ item.review_date }}</strong>
+            <span :class="['badge', timelineStatusClass(item.review_status)]">{{ (item.review_status || 'draft').toUpperCase() }}</span>
+            <span class="badge">{{ (item.related_trade_groups_display || []).length }} trade(s)</span>
           </div>
-          <div class="muted-copy">Updated {{ item.updated_at ? new Date(item.updated_at).toLocaleString() : '-' }}</div>
+          <div class="timeline-header-right">
+            <span :class="['timeline-pnl-pill', dailyPnl(item) >= 0 ? 'pnl-positive' : 'pnl-negative']">{{ dailyPnl(item) >= 0 ? '🟢' : '🔴' }} {{ dailyPnl(item) }}</span>
+            <span class="muted-copy">Updated {{ item.updated_at ? new Date(item.updated_at).toLocaleString() : '-' }}</span>
+          </div>
         </div>
-        <div class="muted-copy">Regime/Bias: {{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }} · Session {{ item.session || '-' }} · Condition {{ item.market_condition || '-' }}</div>
-        <div class="muted-copy">Scores: conviction {{ item.confidence_score ?? '-' }} · discipline {{ item.discipline_score ?? '-' }} · emotion {{ item.emotional_control_score ?? '-' }}</div>
-        <div class="muted-copy">Day PnL: {{ dailyPnl(item) }} · Trades: {{ (item.related_trade_groups_display || []).length }} · Images {{ item.images?.length || 0 }}</div>
-        <div class="chip-wrap" style="margin-top:6px;">
-          <span class="badge">Setup: {{ setupTagsFromDay(item).join(', ') || '-' }}</span>
-          <span class="badge">Execution tags: {{ mistakeNames(item).join(', ') || '-' }}</span>
+
+        <div class="chip-wrap timeline-tag-row">
+          <span v-for="tag in mistakeNames(item)" :key="`mist-tag-${item.id}-${tag}`" class="badge badge-loss">{{ tag }}</span>
+          <span v-if="!mistakeNames(item).length" class="badge">No execution tags</span>
+          <span v-for="setup in setupTagsFromDay(item)" :key="`setup-tag-${item.id}-${setup}`" class="badge">{{ setup }}</span>
         </div>
-        <div class="review-item" style="margin-top:8px;"><strong>✔ 做对了：</strong>{{ item.market_summary || '-' }}</div>
-        <div class="review-item"><strong>❌ 错在哪：</strong>{{ item.biggest_mistake || '-' }}</div>
-        <div class="review-item"><strong>→ 明天改什么：</strong>{{ item.next_day_plan || '-' }}</div>
+
+        <div class="timeline-meta-grid">
+          <div class="timeline-mini-card">Session: {{ item.session || '-' }}</div>
+          <div class="timeline-mini-card">Condition: {{ item.market_condition || '-' }}</div>
+          <div class="timeline-mini-card">Discipline: {{ item.discipline_score ?? '-' }}</div>
+          <div class="timeline-mini-card">Emotion: {{ item.emotional_control_score ?? '-' }}</div>
+          <div class="timeline-mini-card">Regime/Bias: {{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }}</div>
+          <div class="timeline-mini-card">Images: {{ item.images?.length || 0 }}</div>
+        </div>
+
+        <div class="timeline-reflection-grid">
+          <div class="timeline-reflection-box reflection-good">
+            <div class="reflection-title">✔ 做对了</div>
+            <div>{{ item.market_summary || '-' }}</div>
+          </div>
+          <div class="timeline-reflection-box reflection-bad">
+            <div class="reflection-title">❌ 错在哪</div>
+            <div>{{ item.biggest_mistake || '-' }}</div>
+          </div>
+          <div class="timeline-reflection-box reflection-next">
+            <div class="reflection-title">→ 明天改什么</div>
+            <div>{{ item.next_day_plan || '-' }}</div>
+          </div>
+        </div>
         <div class="filter-action-row" style="margin-top:8px;">
           <button class="secondary small-btn" @click="toggleTimelineTrades(item.review_date)">{{ expandedTimelineDates.includes(item.review_date) ? 'Hide Trades' : 'Show Trades' }}</button>
           <span class="muted-copy" v-if="timelineLoadingDate === item.review_date">Loading trade details...</span>
@@ -744,6 +768,12 @@ async function loadTimeline() {
 
 function dailyPnl(item) {
   return (item.related_trade_groups_display || []).reduce((sum, t) => sum + Number(t.realized_pnl || 0), 0)
+}
+
+function timelineStatusClass(status) {
+  if ((status || '').toLowerCase() === 'completed') return 'badge-profit'
+  if ((status || '').toLowerCase() === 'draft') return 'badge-muted'
+  return ''
 }
 
 function mistakeNames(item) {
@@ -1270,6 +1300,96 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.timeline-day-card {
+  border: 1px solid #dbe3f4;
+  border-radius: 12px;
+}
+
+.timeline-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.timeline-header-left,
+.timeline-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.timeline-pnl-pill {
+  font-size: 18px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.pnl-positive {
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.pnl-negative {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.timeline-tag-row {
+  margin: 6px 0 8px;
+}
+
+.timeline-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.timeline-mini-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  font-size: 13px;
+}
+
+.timeline-reflection-grid {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.timeline-reflection-box {
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  padding: 8px 10px;
+}
+
+.reflection-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.reflection-good {
+  background: #f0fdf4;
+}
+
+.reflection-bad {
+  background: #fef2f2;
+}
+
+.reflection-next {
+  background: #eff6ff;
+}
+
+.badge-muted {
+  background: #e5e7eb;
+  color: #374151;
 }
 
 .timeline-filter-grid {
