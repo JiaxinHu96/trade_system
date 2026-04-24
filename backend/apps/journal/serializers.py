@@ -117,10 +117,56 @@ class TradeReviewSerializer(serializers.ModelSerializer):
     trade_group_display = serializers.SerializerMethodField(read_only=True)
     setup_display = SetupTagSerializer(source='setup', read_only=True)
     mistake_tags_display = MistakeTagSerializer(source='mistake_tags', many=True, read_only=True)
+    selected_snapshot = serializers.PrimaryKeyRelatedField(
+        queryset=SetupSnapshot.objects.select_related('pretrade_plan').all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = TradeReview
         fields = '__all__'
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        trade_group = attrs.get('trade_group') or getattr(self.instance, 'trade_group', None)
+        selected_snapshot = attrs.get('selected_snapshot')
+        if not trade_group:
+            return attrs
+        if selected_snapshot is None:
+            selected_snapshot = getattr(trade_group, 'pretrade_snapshot', None)
+        if not selected_snapshot:
+            raise serializers.ValidationError({'selected_snapshot': 'A setup snapshot is required before saving trade review.'})
+        if selected_snapshot.symbol.lower() != (trade_group.symbol or '').lower():
+            raise serializers.ValidationError({'selected_snapshot': 'Selected snapshot symbol must match trade symbol.'})
+        if selected_snapshot.pretrade_plan.plan_date != trade_group.trade_date:
+            raise serializers.ValidationError({'selected_snapshot': 'Selected snapshot must come from the same trade date plan.'})
+        attrs['resolved_snapshot'] = selected_snapshot
+        return attrs
+
+    def _bind_selected_snapshot(self, instance, resolved_snapshot):
+        if not resolved_snapshot:
+            return
+        previous = getattr(instance.trade_group, 'pretrade_snapshot', None)
+        if previous and previous.id != resolved_snapshot.id:
+            previous.trade_group = None
+            previous.save(update_fields=['trade_group', 'updated_at'])
+        if resolved_snapshot.trade_group_id != instance.trade_group_id:
+            resolved_snapshot.trade_group = instance.trade_group
+            resolved_snapshot.save(update_fields=['trade_group', 'updated_at'])
+
+    def create(self, validated_data):
+        resolved_snapshot = validated_data.pop('resolved_snapshot', None) or validated_data.pop('selected_snapshot', None)
+        instance = super().create(validated_data)
+        self._bind_selected_snapshot(instance, resolved_snapshot)
+        return instance
+
+    def update(self, instance, validated_data):
+        resolved_snapshot = validated_data.pop('resolved_snapshot', None) or validated_data.pop('selected_snapshot', None)
+        instance = super().update(instance, validated_data)
+        self._bind_selected_snapshot(instance, resolved_snapshot)
+        return instance
 
     def get_trade_group_display(self, obj):
         group = obj.trade_group

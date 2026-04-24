@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="review-workspace-page">
     <div class="dashboard-hero card compact-header-card">
       <div>
         <div class="dashboard-kicker">Trading Journal</div>
@@ -10,40 +10,53 @@
 
     <section class="card tv-tabbed-panel tv-tabbed-panel-compact">
       <div class="tv-panel-tabs">
-        <button :class="['tv-subtab', { active: journalTab === 'workspace' }]" @click="journalTab='workspace'">Review Workspace</button>
         <button :class="['tv-subtab', { active: journalTab === 'pretrade' }]" @click="openPretradeTab">Pre-Trade Plan</button>
+        <button :class="['tv-subtab', { active: journalTab === 'workspace' }]" @click="journalTab='workspace'">Review Workspace</button>
         <button :class="['tv-subtab', { active: journalTab === 'analytics' }]" @click="openAnalyticsTab">Analytics</button>
         <button :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="openTimelineTab">Journal Timeline</button>
       </div>
     </section>
 
     <template v-if="journalTab === 'workspace'">
-    <section class="card">
+    <section class="card workspace-summary-card">
       <div class="journal-form-grid workspace-summary-grid">
         <label :title="fieldHint('queue_date')"><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" /></label>
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Open Positions</div><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Daily Review</div><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
         <div class="stat-pill"><div class="stat-label">Completion</div><div class="stat-value medium">{{ completionRate }}%</div></div>
-        <button @click="focusFirstPending" class="secondary">Start Review</button>
+        <button @click="focusFirstPending" class="secondary" :disabled="!queuePretradeReady">Start Review</button>
+        <div class="muted-copy" v-if="!queuePretradeReady">{{ queuePretradeMessage }}</div>
       </div>
     </section>
 
-    <section class="card" ref="tradeSectionRef">
+    <section class="card workspace-primary-card" ref="tradeSectionRef">
       <div class="section-title">Trade Review Cards</div>
       <div v-if="!queue.closed_trades?.length" class="empty-row">No closed trades for this day.</div>
       <div class="trade-card-grid">
         <div v-for="card in queue.closed_trades" :key="card.trade_group_id" class="journal-entry-card trade-review-card">
           <div class="trade-review-head">
             <div>
-              <div><strong>{{ card.symbol }}</strong> <span :class="['badge', card.realized_pnl >= 0 ? 'badge-profit' : 'badge-loss']">{{ card.realized_pnl }}</span> <span class="badge">{{ card.status }}</span></div>
+              <div><strong>{{ card.symbol }}</strong> <span :class="['timeline-pnl-pill', card.realized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative']">{{ card.realized_pnl }}</span> <span :class="['badge', tradeStatusClass(card.status)]">{{ card.status }}</span></div>
               <div class="muted-copy">
                 Hold {{ card.hold_minutes || '-' }}m ·
                 <span class="metric-with-tip">Exec {{ card.executions_count }}<span class="metric-tip">Exec = 该交易时间窗内的成交笔数（Raw Executions count）。</span></span> ·
                 <span class="metric-with-tip">Shots {{ card.screenshots_count }}<span class="metric-tip">Shots = 该笔复盘上传的截图数量。</span></span>
               </div>
-              <div class="muted-copy">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }} · Mistakes: {{ (card.mistake_tags || []).join(', ') || '-' }}</div>
-              <div class="muted-copy">Missing: {{ (card.missing_items || []).join(' / ') || 'none' }}</div>
+              <div class="muted-copy">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }}</div>
+              <div class="chip-wrap" v-if="(card.mistake_tags || []).length">
+                <span v-for="tag in card.mistake_tags" :key="`mist-${card.trade_group_id}-${tag}`" class="badge badge-loss">{{ tag }}</span>
+              </div>
+              <div class="muted-copy">Plan vs Exec: entry {{ card.planned_entry ?? '-' }} → {{ card.actual_entry ?? '-' }} · stop {{ card.planned_stop ?? '-' }} · target {{ card.planned_target ?? '-' }}</div>
+              <div class="chip-wrap">
+                <span v-if="card.late_entry" class="badge badge-loss">Late entry</span>
+                <span v-if="card.broke_stop_rule" class="badge badge-loss">Broke stop rule</span>
+                <span class="badge">Setup match: {{ card.setup_match == null ? '-' : (card.setup_match ? 'Yes' : 'No') }}</span>
+              </div>
+              <div class="chip-wrap">
+                <span v-if="!(card.missing_items || []).length" class="badge badge-profit">Review complete</span>
+                <span v-for="item in card.missing_items || []" :key="`miss-${card.trade_group_id}-${item}`" :class="['badge', missingItemBadgeClass(item)]">Missing {{ item }}</span>
+              </div>
             </div>
             <div class="trade-review-progress">
               <div class="progress-bar"><div class="progress-fill" :style="{ width: `${card.review_completeness || 0}%` }"></div></div>
@@ -63,6 +76,14 @@
                 <select v-model="tradeReviewForms[card.trade_group_id].setup">
                   <option :value="null">-</option>
                   <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
+                </select>
+              </label>
+              <label><span>Linked Snapshot *</span>
+                <select v-model="tradeReviewForms[card.trade_group_id].selected_snapshot">
+                  <option :value="null">-</option>
+                  <option v-for="opt in card.snapshot_options || []" :key="opt.id" :value="opt.id">
+                    #{{ opt.id }} · {{ opt.setup_type }} · {{ opt.timeframe }} · Entry {{ opt.planned_entry ?? '-' }} · Risk {{ opt.planned_risk_r ?? '-' }}R
+                  </option>
                 </select>
               </label>
               <label :title="fieldHint('grade')"><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
@@ -110,7 +131,7 @@
       </div>
     </section>
 
-    <section class="card" ref="dailySectionRef">
+    <section class="card workspace-secondary-card" ref="dailySectionRef">
       <div class="section-title">Daily Session Review</div>
       <div class="tv-panel-tabs" style="margin-bottom: 10px;">
         <button :class="['tv-subtab', { active: dailyAccordion === 'context' }]" @click="dailyAccordion='context'">Market Context</button>
@@ -131,6 +152,7 @@
         <label :title="fieldHint('conviction')"><span>Conviction today (1-10)</span><input type="number" min="1" max="10" v-model.number="form.confidence_score" /></label>
         <label :title="fieldHint('discipline')"><span>Discipline (1-10)</span><input type="number" min="1" max="10" v-model.number="form.discipline_score" /></label>
         <label :title="fieldHint('emotional_control')"><span>Emotional control (1-10)</span><input type="number" min="1" max="10" v-model.number="form.emotional_control_score" /></label>
+        <label><span>Focus (1-5)</span><input type="number" min="1" max="5" v-model.number="form.focus_score" /></label>
         <label :title="fieldHint('max_daily_loss')"><span>Max daily loss respected</span><select v-model="maxLossSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
       </div>
 
@@ -165,7 +187,7 @@
       </div>
     </section>
 
-    <section class="card" ref="positionSectionRef">
+    <section class="card workspace-tertiary-card" ref="positionSectionRef">
       <div class="section-title">Open Position Checkpoints</div>
       <div v-if="!queue.open_positions?.length" class="empty-row">No open positions.</div>
       <div v-for="item in queue.open_positions" :key="item.trade_group_id" class="journal-entry-card" style="margin-bottom:10px;">
@@ -173,6 +195,9 @@
         <div v-if="expandedPositions.includes(item.trade_group_id)" class="accordion-body">
           <div class="journal-form-grid">
             <label :title="fieldHint('thesis_status')"><span>Thesis status</span><select v-model="positionForms[item.trade_group_id].status"><option value="open">still valid</option><option value="reduced">weakened</option><option value="closed">invalid</option></select></label>
+            <label><span>Checkpoint Time</span><input type="datetime-local" v-model="positionForms[item.trade_group_id].checkpoint_time" /></label>
+            <label><span>Emotion (1-10)</span><input type="number" min="1" max="10" v-model.number="positionForms[item.trade_group_id].emotion_level" /></label>
+            <label><span>Action bias</span><select v-model="positionForms[item.trade_group_id].action_bias"><option value="hold">hold</option><option value="reduce">reduce</option><option value="take_profit">take_profit</option><option value="stop_out">stop_out</option></select></label>
           </div>
           <label :title="fieldHint('hold_overnight')"><span>Why hold overnight</span><textarea v-model="positionForms[item.trade_group_id].carry_reason" rows="2"></textarea></label>
           <label :title="fieldHint('risk_tomorrow')"><span>Risk tomorrow</span><textarea v-model="positionForms[item.trade_group_id].gap_risk_note" rows="2"></textarea></label>
@@ -185,58 +210,230 @@
 
     <section v-else-if="journalTab === 'pretrade'" class="card">
       <div class="section-title">Pre-Trade Plan / Setup Snapshot</div>
-      <div class="journal-form-grid workspace-field-grid">
-        <label :title="fieldHint('queue_date')"><span>Plan Date</span><input v-model="pretradeDate" type="date" @change="loadPretrade" @click="openDatePicker" @focus="openDatePicker" /></label>
-        <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
-        <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="pretradeForm.market_regime" /></label>
-        <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
-        <label><span>Risk Budget (R)</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
+      <div class="pretrade-module-card">
+        <div class="section-title minor">① Market Context</div>
+        <div class="journal-form-grid workspace-field-grid">
+          <label :title="fieldHint('queue_date')"><span>Plan Date</span><input v-model="pretradeDate" type="date" @change="loadPretrade" @click="openDatePicker" @focus="openDatePicker" /></label>
+          <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
+          <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="pretradeForm.market_regime" /></label>
+          <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
+          <label><span>Risk Budget (R) *</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
+        </div>
       </div>
-      <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
-      <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
-      <label><span>Checklist JSON</span><textarea v-model="checklistText" rows="2"></textarea></label>
-      <div class="filter-action-row">
-        <button @click="savePretrade" :disabled="savingPretrade">{{ savingPretrade ? 'Saving...' : 'Save Pre-Trade Plan' }}</button>
+      <div class="pretrade-module-card">
+        <div class="section-title minor">② Strategy & Checklist</div>
+        <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
+        <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
+        <div>
+          <span>Checklist</span>
+          <div class="checklist-banner" :class="pretradeChecklistPassed ? 'status-good-block' : 'status-bad-block'">
+            Score: {{ checklistPassCount }}/{{ checklistTotal }} · {{ pretradeChecklistPassed ? '✅ PASSED' : '❌ NOT PASSED' }}
+          </div>
+          <div class="pretrade-checklist-grid">
+            <label :class="['checklist-item', pretradeChecklist.market_trending ? 'check-on' : 'check-off']"><span>{{ pretradeChecklist.market_trending ? '✓' : '✗' }}</span><input type="checkbox" v-model="pretradeChecklist.market_trending" /> Market trending</label>
+            <label :class="['checklist-item', pretradeChecklist.volume_above_average ? 'check-on' : 'check-off']"><span>{{ pretradeChecklist.volume_above_average ? '✓' : '✗' }}</span><input type="checkbox" v-model="pretradeChecklist.volume_above_average" /> Volume above average</label>
+            <label :class="['checklist-item', pretradeChecklist.no_major_news_risk ? 'check-on' : 'check-off']"><span>{{ pretradeChecklist.no_major_news_risk ? '✓' : '✗' }}</span><input type="checkbox" v-model="pretradeChecklist.no_major_news_risk" /> No major news risk</label>
+            <label :class="['checklist-item', pretradeChecklist.clean_structure ? 'check-on' : 'check-off']"><span>{{ pretradeChecklist.clean_structure ? '✓' : '✗' }}</span><input type="checkbox" v-model="pretradeChecklist.clean_structure" /> Clean structure</label>
+          </div>
+        </div>
+        <div class="risk-dashboard" :class="riskStatusClass">
+          <div><strong>Risk Dashboard</strong></div>
+          <div>🟢 Used: {{ usedRiskR.toFixed(2) }}R</div>
+          <div>🟡 Remaining: {{ remainingRiskR.toFixed(2) }}R</div>
+          <div>🔴 Max: {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R</div>
+          <div class="risk-progress">
+            <div class="risk-progress-fill" :style="{ width: `${usedRiskPct}%` }"></div>
+          </div>
+          <div class="muted-copy">[{{ riskProgressBar }}] {{ usedRiskPct.toFixed(0) }}%</div>
+        </div>
+        <div v-if="riskLimitReached" class="save-error">Risk budget reached. New setup snapshots are blocked until budget is increased.</div>
+        <div class="save-error" v-if="pretradeError">{{ pretradeError }}</div>
+        <div class="filter-action-row">
+          <button @click="savePretrade" :disabled="savingPretrade">{{ savingPretrade ? 'Saving...' : 'Save Pre-Trade Plan' }}</button>
+        </div>
       </div>
 
-      <div class="section-title" style="margin-top:14px;">Setup Snapshots</div>
+      <div class="section-title" style="margin-top:14px;">③ Setup Snapshots</div>
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
-        <div class="journal-form-grid trade-review-form-grid">
-          <label><span>Symbol</span><input v-model="row.symbol" /></label>
-          <label><span>Strategy</span><input v-model="row.strategy" /></label>
-          <label><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-          <label><span>Checklist passed</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
-        </div>
+        <div class="section-title minor">Basic</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label><span>Planned Entry</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
-          <label><span>Planned Stop</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
-          <label><span>Planned Target</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
+          <label><span>Symbol *</span><input v-model="row.symbol" /></label>
+          <label><span>Strategy *</span><input v-model="row.strategy" /></label>
+          <label><span>Direction *</span><select v-model="row.direction"><option value="long">long</option><option value="short">short</option></select></label>
         </div>
-        <label><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
-        <label><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
+        <div class="section-title minor">Setup</div>
+        <div class="journal-form-grid workspace-field-grid">
+          <label><span>Setup Type *</span><select v-model="row.setup_type"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
+          <label><span>Timeframe *</span><select v-model="row.timeframe"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
+          <label><span>Confidence (1-10)</span><input type="number" min="1" max="10" v-model.number="row.confidence_score" /></label>
+          <label><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+          <label><span>Checklist passed *</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
+        </div>
+        <div class="section-title minor">Execution Plan</div>
+        <div class="journal-form-grid workspace-field-grid">
+          <label><span>Planned Entry *</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
+          <label><span>Planned Stop *</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
+          <label><span>Planned Target *</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
+          <label><span>Planned Risk (R) *</span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" /></label>
+        </div>
+        <div class="muted-copy" :class="confidenceClass(row.confidence_score)">Confidence signal: {{ confidenceSignal(row.confidence_score) }}</div>
+        <div class="section-title minor logic-toggle-row">
+          <span>Logic</span>
+          <button type="button" class="secondary small-btn" @click="toggleSnapshotLogic(row.local_id)">{{ expandedSnapshotLogic.includes(row.local_id) ? 'Hide Logic' : 'Show Logic' }}</button>
+        </div>
+        <div v-if="expandedSnapshotLogic.includes(row.local_id)">
+          <div class="journal-form-grid workspace-field-grid">
+            <label><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
+            <label><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
+          </div>
+          <label><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
+          <label><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
+        </div>
+        <div v-if="!row.checklist_passed" class="save-warning">Checklist not fully passed — allowed, but review confidence should be conservative.</div>
+        <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
         <div class="filter-action-row">
           <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
         </div>
       </div>
-      <button class="secondary" @click="addSnapshotRow">Add Snapshot</button>
+      <button class="secondary" @click="addSnapshotRow" :disabled="riskLimitReached">Add Snapshot</button>
     </section>
 
-    <section v-else-if="journalTab === 'analytics'" class="card">
+    <section v-else-if="journalTab === 'analytics'" class="card analytics-surface">
       <div class="section-title">Trade Review Analytics</div>
       <div class="filter-action-row" style="margin-top:0;">
         <button @click="loadAnalytics" :disabled="loadingAnalytics">{{ loadingAnalytics ? 'Loading...' : 'Refresh Analytics' }}</button>
       </div>
-      <div class="journal-text-grid">
-        <div>
-          <div class="section-title minor">By Strategy</div>
-          <div v-for="row in analytics.by_strategy" :key="`s-${row.key}`" class="review-item">
-            {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+      <div v-if="analyticsError" class="save-error">{{ analyticsError }}</div>
+      <div v-if="!analytics.by_strategy.length && !analytics.by_session.length && !analytics.by_symbol.length" class="empty-row">
+        No analytics data yet. Save Trade Reviews with `realized_r` / `session` / `strategy` first.
+      </div>
+      <div v-else>
+        <div class="analytics-kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Trades</div>
+            <div class="kpi-value">{{ analytics.summary?.trades ?? 0 }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">PnL</div>
+            <div :class="['kpi-value', (analytics.summary?.total_pnl ?? 0) >= 0 ? 'kpi-positive' : 'kpi-negative']">{{ analytics.summary?.total_pnl ?? 0 }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Win Rate</div>
+            <div class="kpi-value">{{ summaryWinRate }}%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Profit Factor</div>
+            <div class="kpi-value">{{ analytics.summary?.profit_factor ?? '-' }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Max DD</div>
+            <div :class="['kpi-value', (analytics.summary?.max_drawdown ?? 0) >= 0 ? 'kpi-positive' : 'kpi-negative']">{{ analytics.summary?.max_drawdown ?? 0 }}</div>
           </div>
         </div>
-        <div>
-          <div class="section-title minor">By Session</div>
-          <div v-for="row in analytics.by_session" :key="`ss-${row.key}`" class="review-item">
-            {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+
+        <div class="insight-highlight-card">
+          <div class="section-title minor">💡 Actionable Insights</div>
+          <div v-if="!(analytics.insights || []).length" class="muted-copy">Not enough data to generate insights.</div>
+          <div v-for="(line, idx) in analytics.insights || []" :key="`ins-${idx}`" class="review-item">👉 {{ line }}</div>
+        </div>
+
+        <div class="journal-entry-card analytics-panel-card" style="margin-top:10px;">
+          <div class="section-title minor">Strategy Edge Ranking</div>
+          <div class="analytics-table-wrap">
+            <table class="analytics-table">
+              <thead>
+                <tr>
+                  <th>Strategy</th><th>N</th><th>Win</th><th>Avg R</th><th>Exp</th><th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in analytics.strategy_edge_ranking || []" :key="`edge-${row.key}`">
+                  <td>{{ row.key }}</td>
+                  <td>{{ row.trades }}</td>
+                  <td>{{ row.win_rate }}%</td>
+                  <td>{{ row.avg_r ?? '-' }}</td>
+                  <td>{{ row.expectancy ?? '-' }}</td>
+                  <td>{{ row.action }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="journal-text-grid" style="margin-top:10px;">
+          <div class="journal-entry-card">
+            <div class="section-title minor">🔥 Biggest Loss Drivers</div>
+            <div v-if="!(analytics.mistake_impact || []).length" class="muted-copy">No mistake-tag data yet.</div>
+            <div v-for="(row, idx) in analytics.mistake_impact || []" :key="`mist-${row.key}`" class="review-item">
+              {{ idx + 1 }}. {{ row.key }} → Avg R {{ row.avg_r ?? '-' }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }}
+            </div>
+          </div>
+          <div class="journal-entry-card">
+            <div class="section-title minor">📊 Execution Quality</div>
+            <div class="analytics-plan-grid">
+              <div class="timeline-reflection-box reflection-good">
+                <div class="reflection-title">✔ Followed Plan</div>
+                <div>Win {{ analytics.plan_adherence?.followed?.win_rate ?? '-' }}% · Exp {{ analytics.plan_adherence?.followed?.expectancy ?? '-' }}</div>
+              </div>
+              <div class="timeline-reflection-box reflection-bad">
+                <div class="reflection-title">❌ Did NOT Follow</div>
+                <div>Win {{ analytics.plan_adherence?.not_followed?.win_rate ?? '-' }}% · Exp {{ analytics.plan_adherence?.not_followed?.expectancy ?? '-' }}</div>
+              </div>
+            </div>
+            <div class="review-item">⚠ Late Entry {{ analytics.plan_adherence?.late_entry_rate ?? '-' }}% · ⚠ Broke Stop {{ analytics.plan_adherence?.broke_stop_rate ?? '-' }}% · Sample {{ analytics.plan_adherence?.compare_sample_size ?? 0 }}</div>
+          </div>
+        </div>
+
+        <div class="journal-entry-card" style="margin-top:10px;">
+          <div class="section-title minor">Compare</div>
+          <div class="journal-form-grid workspace-field-grid">
+            <label><span>Dimension</span>
+              <select v-model="compareDimension">
+                <option v-for="item in analyticsDimensionOptions" :key="item.key" :value="item.key">{{ item.label }}</option>
+              </select>
+            </label>
+            <label><span>Left</span>
+              <select v-model="compareLeftKey"><option v-for="key in comparisonOptions" :key="`l-${key}`" :value="key">{{ key }}</option></select>
+            </label>
+            <label><span>Right</span>
+              <select v-model="compareRightKey"><option v-for="key in comparisonOptions" :key="`r-${key}`" :value="key">{{ key }}</option></select>
+            </label>
+          </div>
+          <div class="muted-copy" v-if="leftCompareRow">{{ compareLeftKey }} → N {{ leftCompareRow.trades }} · Win {{ leftCompareRow.win_rate }}% · PnL {{ leftCompareRow.total_pnl }} · Exp {{ leftCompareRow.expectancy }} · PF {{ leftCompareRow.profit_factor ?? '-' }}</div>
+          <div class="muted-copy" v-if="rightCompareRow">{{ compareRightKey }} → N {{ rightCompareRow.trades }} · Win {{ rightCompareRow.win_rate }}% · PnL {{ rightCompareRow.total_pnl }} · Exp {{ rightCompareRow.expectancy }} · PF {{ rightCompareRow.profit_factor ?? '-' }}</div>
+        </div>
+
+        <div class="journal-text-grid" style="margin-top:10px;">
+          <div class="journal-entry-card analytics-panel-card">
+            <div class="section-title minor">By Strategy</div>
+            <div v-for="row in analytics.by_strategy" :key="`s-${row.key}`" class="analytics-stat-row">
+              <strong>{{ row.key }}</strong>
+              <span class="badge">N {{ row.trades }}</span>
+              <span class="badge">Win {{ row.win_rate }}%</span>
+              <span :class="['badge', row.total_pnl >= 0 ? 'badge-profit' : 'badge-loss']">PnL {{ row.total_pnl }}</span>
+              <span class="badge">AvgR {{ row.avg_r ?? '-' }}</span>
+              <span class="badge">Exp {{ row.expectancy ?? '-' }}</span>
+            </div>
+          </div>
+          <div class="journal-entry-card analytics-panel-card">
+            <div class="section-title minor">By Session</div>
+            <div v-for="row in analytics.by_session" :key="`ss-${row.key}`" class="analytics-stat-row">
+              <strong>{{ row.key }}</strong>
+              <span class="badge">N {{ row.trades }}</span>
+              <span class="badge">Win {{ row.win_rate }}%</span>
+              <span :class="['badge', row.total_pnl >= 0 ? 'badge-profit' : 'badge-loss']">PnL {{ row.total_pnl }}</span>
+              <span class="badge">Exp {{ row.expectancy ?? '-' }}</span>
+            </div>
+          </div>
+          <div class="journal-entry-card analytics-panel-card">
+            <div class="section-title minor">By Symbol</div>
+            <div v-for="row in analytics.by_symbol" :key="`sym-${row.key}`" class="analytics-stat-row">
+              <strong>{{ row.key }}</strong>
+              <span class="badge">N {{ row.trades }}</span>
+              <span class="badge">Win {{ row.win_rate }}%</span>
+              <span :class="['badge', row.total_pnl >= 0 ? 'badge-profit' : 'badge-loss']">PnL {{ row.total_pnl }}</span>
+              <span class="badge">Exp {{ row.expectancy ?? '-' }}</span>
+            </div>
           </div>
           <label :title="fieldHint('hold_overnight')"><span>Why hold overnight</span><textarea v-model="positionForms[item.trade_group_id].carry_reason" rows="2"></textarea></label>
           <label :title="fieldHint('risk_tomorrow')"><span>Risk tomorrow</span><textarea v-model="positionForms[item.trade_group_id].gap_risk_note" rows="2"></textarea></label>
@@ -244,11 +441,10 @@
           <div class="filter-action-row"><button @click="saveCheckpoint(item.trade_group_id)" :disabled="savingPosition === item.trade_group_id">{{ savingPosition === item.trade_group_id ? 'Saving...' : 'Save Checkpoint' }}</button></div>
         </div>
       </div>
-      <div>
-        <div class="section-title minor">By Symbol</div>
-        <div v-for="row in analytics.by_symbol" :key="`sym-${row.key}`" class="review-item">
-          {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
-        </div>
+      <div class="tv-dashboard-chart-grid tv-dashboard-chart-grid-triple" style="margin-top:12px;">
+        <TradesVizChart title="Equity Curve" subtitle="Cumulative realized PnL with baseline" :categories="equityCategories" :series="equitySeries" default-type="line" :height="180" />
+        <TradesVizChart title="R Distribution" subtitle="Per-trade R multiples + baseline" :categories="rDistributionCategories" :series="rDistributionSeries" default-type="bar" :height="180" />
+        <TradesVizChart title="Holding Time vs PnL" subtitle="Includes simple trend line" :categories="holdingScatterCategories" :series="holdingScatterSeries" default-type="line" :height="180" />
       </div>
     </section>
 
@@ -257,11 +453,65 @@
       <div class="journal-form-grid timeline-filter-grid">
         <label :title="fieldHint('date_from')"><span>Date From</span><input v-model="timelineDateFrom" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
         <label :title="fieldHint('date_to')"><span>Date To</span><input v-model="timelineDateTo" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
+        <label><span>Strategy contains</span><input v-model="timelineStrategyQuery" placeholder="breakout / opening..." /></label>
+        <label><span>Session</span><select v-model="timelineSessionFilter"><option value="">All</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option><option value="overnight">overnight</option></select></label>
+        <label><span>Loss days only</span><select v-model="timelineLossOnly"><option :value="false">No</option><option :value="true">Yes</option></select></label>
+        <label><span>Low emotion only (<=4)</span><select v-model="timelineLowEmotionOnly"><option :value="false">No</option><option :value="true">Yes</option></select></label>
         <button class="secondary" @click="loadTimeline">Refresh</button>
       </div>
-      <div v-if="!dailyTimeline.length" class="empty-row">No daily reviews yet.</div>
-      <div v-for="item in dailyTimeline" :key="item.id" class="review-item">
-        <strong>{{ item.review_date }}</strong> · {{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }} · {{ item.market_summary || '-' }} · Trades {{ (item.related_trade_groups_display || []).map((t) => t.symbol).join(', ') || '-' }}
+      <div v-if="!filteredTimeline.length" class="empty-row">No daily reviews matched the filters.</div>
+      <div v-for="item in filteredTimeline" :key="item.id" class="journal-entry-card timeline-day-card" style="margin-bottom:10px;">
+        <div class="timeline-header-row">
+          <div class="timeline-header-left">
+            <strong>📅 {{ item.review_date }}</strong>
+            <span :class="['badge', timelineStatusClass(item.review_status)]">{{ (item.review_status || 'draft').toUpperCase() }}</span>
+            <span class="badge">{{ (item.related_trade_groups_display || []).length }} trade(s)</span>
+          </div>
+          <div class="timeline-header-right">
+            <span :class="['timeline-pnl-pill', dailyPnl(item) >= 0 ? 'pnl-positive' : 'pnl-negative']">{{ dailyPnl(item) >= 0 ? '🟢' : '🔴' }} {{ dailyPnl(item) }}</span>
+            <span class="muted-copy">Updated {{ item.updated_at ? new Date(item.updated_at).toLocaleString() : '-' }}</span>
+          </div>
+        </div>
+
+        <div class="chip-wrap timeline-tag-row">
+          <span v-for="tag in mistakeNames(item)" :key="`mist-tag-${item.id}-${tag}`" class="badge badge-loss">{{ tag }}</span>
+          <span v-if="!mistakeNames(item).length" class="badge">No execution tags</span>
+          <span v-for="setup in setupTagsFromDay(item)" :key="`setup-tag-${item.id}-${setup}`" class="badge">{{ setup }}</span>
+        </div>
+
+        <div class="timeline-meta-grid">
+          <div class="timeline-mini-card">Session: {{ item.session || '-' }}</div>
+          <div class="timeline-mini-card">Condition: {{ item.market_condition || '-' }}</div>
+          <div class="timeline-mini-card">Discipline: {{ item.discipline_score ?? '-' }}</div>
+          <div class="timeline-mini-card">Emotion: {{ item.emotional_control_score ?? '-' }}</div>
+          <div class="timeline-mini-card">Regime/Bias: {{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }}</div>
+          <div class="timeline-mini-card">Images: {{ item.images?.length || 0 }}</div>
+        </div>
+
+        <div class="timeline-reflection-grid">
+          <div class="timeline-reflection-box reflection-good">
+            <div class="reflection-title">✔ 做对了</div>
+            <div>{{ item.market_summary || '-' }}</div>
+          </div>
+          <div class="timeline-reflection-box reflection-bad">
+            <div class="reflection-title">❌ 错在哪</div>
+            <div>{{ item.biggest_mistake || '-' }}</div>
+          </div>
+          <div class="timeline-reflection-box reflection-next">
+            <div class="reflection-title">→ 明天改什么</div>
+            <div>{{ item.next_day_plan || '-' }}</div>
+          </div>
+        </div>
+        <div class="filter-action-row" style="margin-top:8px;">
+          <button class="secondary small-btn" @click="toggleTimelineTrades(item.review_date)">{{ expandedTimelineDates.includes(item.review_date) ? 'Hide Trades' : 'Show Trades' }}</button>
+          <span class="muted-copy" v-if="timelineLoadingDate === item.review_date">Loading trade details...</span>
+        </div>
+        <div v-if="expandedTimelineDates.includes(item.review_date)" class="accordion-body" style="padding-top:8px;">
+          <div v-if="!(timelineTradeDetailsByDate[item.review_date] || []).length" class="empty-row">No closed trades for this date.</div>
+          <div v-for="card in (timelineTradeDetailsByDate[item.review_date] || [])" :key="`tl-${item.review_date}-${card.trade_group_id}`" class="review-item">
+            {{ card.symbol }} · PnL {{ card.realized_pnl }} · Exec {{ card.executions_count }} · Hold {{ card.hold_minutes ?? '-' }}m · EntryQ {{ card.trade_review?.entry_quality ?? '-' }} · ExitQ {{ card.trade_review?.exit_quality ?? '-' }} · RiskQ {{ card.trade_review?.risk_management ?? '-' }} · R {{ card.trade_review?.realized_r ?? '-' }}
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -269,6 +519,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
+import TradesVizChart from '../components/TradesVizChart.vue'
 import {
   createDailyReview,
   fetchDailyReviews,
@@ -288,7 +539,7 @@ import {
 } from '../api/journal'
 
 const queueDate = ref(new Date().toISOString().slice(0, 10))
-const journalTab = ref('workspace')
+const journalTab = ref('pretrade')
 const queue = ref({ summary: {}, closed_trades: [], open_positions: [] })
 const dailyAccordion = ref('context')
 const expandedCards = ref([])
@@ -310,17 +561,33 @@ const positionSectionRef = ref(null)
 const dailyTimeline = ref([])
 const timelineDateFrom = ref('')
 const timelineDateTo = ref('')
+const timelineStrategyQuery = ref('')
+const timelineSessionFilter = ref('')
+const timelineLossOnly = ref(false)
+const timelineLowEmotionOnly = ref(false)
+const expandedTimelineDates = ref([])
+const timelineTradeDetailsByDate = ref({})
+const timelineLoadingDate = ref('')
 const pretradeDate = ref(new Date().toISOString().slice(0, 10))
 const pretradeForm = ref({ id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' })
 const watchlistText = ref('')
-const checklistText = ref('{}')
+const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
+const expandedSnapshotLogic = ref([])
 const savingPretrade = ref(false)
 const savingSnapshotId = ref(null)
-const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [] })
+const pretradeError = ref('')
+const snapshotErrors = ref({})
+const queuePretradeReady = ref(true)
+const queuePretradeMessage = ref('')
+const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [], strategy_edge_ranking: [], mistake_impact: [], plan_adherence: {}, insights: [] })
 const loadingAnalytics = ref(false)
+const analyticsError = ref('')
+const compareDimension = ref('by_strategy')
+const compareLeftKey = ref('')
+const compareRightKey = ref('')
 
-const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
+const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
 const completionRate = computed(() => {
   const total = (queue.value.summary.closed_trade_count || 0) + (queue.value.summary.open_position_count || 0) + 1
@@ -377,11 +644,96 @@ function fieldHint(key) {
   return FIELD_HINTS[key] || ''
 }
 
+const analyticsDimensionOptions = computed(() => ([
+  { key: 'by_strategy', label: 'Strategy' },
+  { key: 'by_session', label: 'Session' },
+  { key: 'by_symbol', label: 'Symbol' },
+]))
+
+const analyticsRowsForDimension = computed(() => analytics.value?.[compareDimension.value] || [])
+const comparisonOptions = computed(() => analyticsRowsForDimension.value.map((row) => row.key))
+const leftCompareRow = computed(() => analyticsRowsForDimension.value.find((row) => row.key === compareLeftKey.value) || null)
+const rightCompareRow = computed(() => analyticsRowsForDimension.value.find((row) => row.key === compareRightKey.value) || null)
+const summaryWinRate = computed(() => {
+  const wins = Number(analytics.value?.summary?.wins || 0)
+  const trades = Number(analytics.value?.summary?.trades || 0)
+  if (!trades) return 0
+  return ((wins / trades) * 100).toFixed(1)
+})
+const equityCategories = computed(() => (analytics.value.equity_curve || []).map((p) => p.date))
+const equitySeries = computed(() => {
+  const curve = (analytics.value.equity_curve || []).map((p) => p.equity)
+  return [
+    { name: 'Equity', data: curve },
+    { name: 'Baseline 0', data: curve.map(() => 0) },
+  ]
+})
+const rDistributionCategories = computed(() => (analytics.value.r_distribution || []).map((_, idx) => `T${idx + 1}`))
+const rDistributionSeries = computed(() => {
+  const dist = analytics.value.r_distribution || []
+  return [
+    { name: 'R Multiple', data: dist },
+    { name: 'Baseline 0', data: dist.map(() => 0) },
+  ]
+})
+const holdingScatterCategories = computed(() => (analytics.value.holding_vs_pnl || []).map((_, idx) => `P${idx + 1}`))
+const holdingScatterSeries = computed(() => [
+  { name: 'Holding Minutes', data: (analytics.value.holding_vs_pnl || []).map((p) => p.holding_minutes) },
+  { name: 'PnL', data: (analytics.value.holding_vs_pnl || []).map((p) => p.pnl) },
+  { name: 'PnL Trend', data: holdingTrend.value },
+])
+const holdingTrend = computed(() => {
+  const rows = analytics.value.holding_vs_pnl || []
+  if (rows.length < 2) return rows.map((p) => p.pnl)
+  const n = rows.length
+  const xs = rows.map((_, idx) => idx + 1)
+  const ys = rows.map((p) => Number(p.pnl || 0))
+  const sumX = xs.reduce((a, b) => a + b, 0)
+  const sumY = ys.reduce((a, b) => a + b, 0)
+  const sumXY = xs.reduce((a, x, idx) => a + (x * ys[idx]), 0)
+  const sumXX = xs.reduce((a, x) => a + (x * x), 0)
+  const slope = ((n * sumXY) - (sumX * sumY)) / Math.max(1, ((n * sumXX) - (sumX * sumX)))
+  const intercept = (sumY - (slope * sumX)) / n
+  return xs.map((x) => Number((intercept + (slope * x)).toFixed(2)))
+})
+
+const filteredTimeline = computed(() => {
+  return (dailyTimeline.value || []).filter((item) => {
+    const strategyOk = !timelineStrategyQuery.value || (item.strategy || '').toLowerCase().includes(timelineStrategyQuery.value.toLowerCase())
+    const sessionOk = !timelineSessionFilter.value || (item.session || '') === timelineSessionFilter.value
+    const pnl = dailyPnl(item)
+    const lossOk = !timelineLossOnly.value || pnl < 0
+    const emotionOk = !timelineLowEmotionOnly.value || ((item.emotional_control_score ?? 999) <= 4)
+    return strategyOk && sessionOk && lossOk && emotionOk
+  })
+})
+
 function toggleCard(id) { expandedCards.value = expandedCards.value.includes(id) ? expandedCards.value.filter((v) => v !== id) : [...expandedCards.value, id] }
 function togglePosition(id) { expandedPositions.value = expandedPositions.value.includes(id) ? expandedPositions.value.filter((v) => v !== id) : [...expandedPositions.value, id] }
+function toggleSnapshotLogic(localId) {
+  expandedSnapshotLogic.value = expandedSnapshotLogic.value.includes(localId)
+    ? expandedSnapshotLogic.value.filter((v) => v !== localId)
+    : [...expandedSnapshotLogic.value, localId]
+}
 function openDatePicker(event) {
   const dateInput = event?.target
   if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
+}
+
+function confidenceSignal(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 'Not set'
+  if (n < 5) return 'Low confidence (<5): not recommended'
+  if (n >= 8) return 'High confidence'
+  return 'Normal confidence'
+}
+
+function confidenceClass(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return ''
+  if (n < 5) return 'status-bad'
+  if (n >= 8) return 'status-good'
+  return ''
 }
 
 function toggleDailyMistakeTag(tagId) {
@@ -404,6 +756,7 @@ function hydrateCardForms(cards) {
     const review = card.trade_review || {}
     next[card.trade_group_id] = {
       trade_group: card.trade_group_id,
+      selected_snapshot: card.selected_snapshot_id || null,
       strategy: review.strategy || '',
       setup: review.setup || null,
       final_grade: review.final_grade || '',
@@ -431,8 +784,11 @@ function hydratePositionForms(positions) {
       trade_group: item.trade_group_id,
       review_date: queueDate.value,
       status: 'open',
+      checkpoint_time: `${queueDate.value}T09:30`,
       carry_reason: '',
       gap_risk_note: '',
+      emotion_level: null,
+      action_bias: 'hold',
       next_session_plan: '',
     }
   })
@@ -441,7 +797,7 @@ function hydratePositionForms(positions) {
 
 function hydrateDailyReview(dailyReview) {
   if (!dailyReview) {
-    form.value = { review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id), session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] }
+    form.value = { review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id), session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] }
     maxLossSelection.value = ''
     return
   }
@@ -461,6 +817,7 @@ function hydrateDailyReview(dailyReview) {
     confidence_score: dailyReview.confidence_score,
     discipline_score: dailyReview.discipline_score,
     emotional_control_score: dailyReview.emotional_control_score,
+    focus_score: dailyReview.focus_score,
     max_daily_loss_respected: dailyReview.max_daily_loss_respected,
     mistake_tags: dailyReview.mistake_tags || [],
     image_urls: (dailyReview.images || []).map((item) => item.image_url),
@@ -480,6 +837,7 @@ async function loadQueue() {
   hydrateCardForms(queue.value.closed_trades || [])
   hydratePositionForms(queue.value.open_positions || [])
   hydrateDailyReview(queue.value.daily_review)
+  await loadQueuePretradeStatus()
 }
 
 async function loadTimeline() {
@@ -488,6 +846,55 @@ async function loadTimeline() {
   if (timelineDateTo.value) params.date_to = timelineDateTo.value
   const timelineRes = await fetchDailyReviews(params)
   dailyTimeline.value = timelineRes.data?.results || []
+}
+
+function dailyPnl(item) {
+  return (item.related_trade_groups_display || []).reduce((sum, t) => sum + Number(t.realized_pnl || 0), 0)
+}
+
+function timelineStatusClass(status) {
+  if ((status || '').toLowerCase() === 'completed') return 'badge-profit'
+  if ((status || '').toLowerCase() === 'draft') return 'badge-muted'
+  return ''
+}
+
+function tradeStatusClass(status) {
+  const value = (status || '').toLowerCase()
+  if (value === 'closed') return 'badge-profit'
+  if (value === 'open') return 'badge-loss'
+  return 'badge-muted'
+}
+
+function missingItemBadgeClass(item) {
+  if (['strategy', 'setup'].includes(item)) return 'badge-loss'
+  if (['mistake_tags', 'screenshot'].includes(item)) return 'badge-warning'
+  return 'badge'
+}
+
+function mistakeNames(item) {
+  const ids = item.mistake_tags || []
+  return ids.map((id) => (mistakeTags.value || []).find((t) => t.id === id)?.name).filter(Boolean)
+}
+
+function setupTagsFromDay(item) {
+  const cards = timelineTradeDetailsByDate.value[item.review_date] || []
+  return Array.from(new Set(cards.map((card) => card.setup_name).filter(Boolean)))
+}
+
+async function toggleTimelineTrades(reviewDate) {
+  if (expandedTimelineDates.value.includes(reviewDate)) {
+    expandedTimelineDates.value = expandedTimelineDates.value.filter((d) => d !== reviewDate)
+    return
+  }
+  expandedTimelineDates.value = [...expandedTimelineDates.value, reviewDate]
+  if (timelineTradeDetailsByDate.value[reviewDate]) return
+  timelineLoadingDate.value = reviewDate
+  try {
+    const res = await fetchReviewQueue(reviewDate)
+    timelineTradeDetailsByDate.value[reviewDate] = res.data?.closed_trades || []
+  } finally {
+    timelineLoadingDate.value = ''
+  }
 }
 
 async function openTimelineTab() {
@@ -509,6 +916,10 @@ async function saveCardReview(tradeGroupId) {
   savingTrade.value = tradeGroupId
   try {
     const payload = { ...tradeReviewForms.value[tradeGroupId] }
+    if (!payload.selected_snapshot) {
+      tradeSaveErrors.value[tradeGroupId] = 'Please link a setup snapshot before saving trade review.'
+      return
+    }
     payload.entry_quality = normalizeScore(payload.entry_quality)
     payload.exit_quality = normalizeScore(payload.exit_quality)
     payload.risk_management = normalizeScore(payload.risk_management)
@@ -540,12 +951,19 @@ function buildLocalSnapshot(item = {}) {
     trade_group: item.trade_group || null,
     symbol: item.symbol || '',
     strategy: item.strategy || '',
+    direction: item.direction || 'long',
+    setup_type: item.setup_type || 'breakout',
+    timeframe: item.timeframe || '5m',
+    confidence_score: item.confidence_score,
     setup: item.setup || null,
+    trigger_type: item.trigger_type || 'custom',
     trigger_condition: item.trigger_condition || '',
+    invalidation_type: item.invalidation_type || 'custom',
     invalidation: item.invalidation || '',
     planned_entry: item.planned_entry,
     planned_stop: item.planned_stop,
     planned_target: item.planned_target,
+    planned_risk_r: item.planned_risk_r,
     checklist_passed: item.checklist_passed ?? false,
     snapshot_notes: item.snapshot_notes || '',
   }
@@ -557,27 +975,40 @@ async function loadPretrade() {
   if (existing) {
     pretradeForm.value = { ...existing }
     watchlistText.value = (existing.watchlist || []).join(', ')
-    checklistText.value = JSON.stringify(existing.pre_trade_checklist || {}, null, 2)
+    pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false, ...(existing.pre_trade_checklist || {}) }
     const snaps = await fetchSetupSnapshots({ pretrade_plan: existing.id, page_size: 50 })
     snapshotForms.value = (snaps.data?.results || snaps.data || []).map((item) => buildLocalSnapshot(item))
+    expandedSnapshotLogic.value = []
   } else {
     pretradeForm.value = { id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' }
     watchlistText.value = ''
-    checklistText.value = '{}'
+    pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false }
     snapshotForms.value = [buildLocalSnapshot()]
+    expandedSnapshotLogic.value = []
   }
 }
 
 async function savePretrade() {
   savingPretrade.value = true
   try {
-    let parsedChecklist = {}
-    try { parsedChecklist = JSON.parse(checklistText.value || '{}') } catch { parsedChecklist = {} }
+    pretradeError.value = ''
+    if (!pretradeForm.value.market_regime) {
+      pretradeError.value = 'Market regime is required.'
+      return
+    }
+    if (!(Number(pretradeForm.value.risk_budget_r) > 0)) {
+      pretradeError.value = 'Risk budget (R) must be greater than 0.'
+      return
+    }
+    if (!snapshotForms.value.length) {
+      pretradeError.value = 'At least 1 setup snapshot is required.'
+      return
+    }
     const payload = {
       ...pretradeForm.value,
       plan_date: pretradeDate.value,
       watchlist: watchlistText.value.split(',').map((v) => v.trim()).filter(Boolean),
-      pre_trade_checklist: parsedChecklist,
+      pre_trade_checklist: { ...pretradeChecklist.value },
     }
     const res = pretradeForm.value.id ? await updatePretradePlan(pretradeForm.value.id, payload) : await savePretradePlan(payload)
     pretradeForm.value = res.data
@@ -593,6 +1024,24 @@ function addSnapshotRow() {
 
 async function saveSnapshot(row) {
   if (!pretradeForm.value.id) await savePretrade()
+  snapshotErrors.value[row.local_id] = ''
+  if (!(Number(row.planned_risk_r) > 0)) {
+    snapshotErrors.value[row.local_id] = 'Planned risk (R) is required and must be greater than 0.'
+    return
+  }
+  const otherRowsRisk = snapshotForms.value
+    .filter((item) => item.local_id !== row.local_id)
+    .reduce((sum, item) => sum + Number(item.planned_risk_r || 0), 0)
+  const nextUsed = otherRowsRisk + Number(row.planned_risk_r || 0)
+  const budget = Number(pretradeForm.value.risk_budget_r || 0)
+  if (budget > 0 && nextUsed > budget) {
+    snapshotErrors.value[row.local_id] = `Planned risk would exceed budget (${nextUsed.toFixed(2)}R / ${budget.toFixed(2)}R).`
+    return
+  }
+  if (!row.strategy || row.planned_entry == null || row.planned_stop == null || row.planned_target == null) {
+    snapshotErrors.value[row.local_id] = 'Strategy, planned entry, stop, target, and planned risk are required.'
+    return
+  }
   savingSnapshotId.value = row.local_id
   try {
     const payload = { ...row, pretrade_plan: pretradeForm.value.id }
@@ -604,11 +1053,66 @@ async function saveSnapshot(row) {
   }
 }
 
+const usedRiskR = computed(() => snapshotForms.value.reduce((sum, row) => sum + Number(row.planned_risk_r || 0), 0))
+
+const remainingRiskR = computed(() => {
+  const budget = Number(pretradeForm.value.risk_budget_r || 0)
+  return budget - usedRiskR.value
+})
+const usedRiskPct = computed(() => {
+  const budget = Number(pretradeForm.value.risk_budget_r || 0)
+  if (!(budget > 0)) return 0
+  return Math.min(100, Math.max(0, (usedRiskR.value / budget) * 100))
+})
+const riskLimitReached = computed(() => remainingRiskR.value <= 0)
+const riskStatusClass = computed(() => {
+  if (usedRiskPct.value >= 100) return 'risk-danger'
+  if (usedRiskPct.value >= 75) return 'risk-warning'
+  return 'risk-safe'
+})
+const riskProgressBar = computed(() => {
+  const filled = Math.round(usedRiskPct.value / 10)
+  return `${'█'.repeat(filled)}${'░'.repeat(Math.max(0, 10 - filled))}`
+})
+const checklistKeys = ['market_trending', 'volume_above_average', 'no_major_news_risk', 'clean_structure']
+const checklistTotal = checklistKeys.length
+const checklistPassCount = computed(() => checklistKeys.reduce((sum, key) => sum + (pretradeChecklist.value[key] ? 1 : 0), 0))
+const pretradeChecklistPassed = computed(() => checklistPassCount.value === checklistTotal)
+
+function snapshotIsComplete(row) {
+  return Boolean(row.strategy && row.planned_entry != null && row.planned_stop != null && row.planned_target != null && Number(row.planned_risk_r || 0) > 0)
+}
+
+async function loadQueuePretradeStatus() {
+  const res = await fetchPretradePlans({ date: queueDate.value, page_size: 1 })
+  const plan = (res.data?.results || res.data || [])[0]
+  if (!plan || !plan.market_regime || !(Number(plan.risk_budget_r) > 0)) {
+    queuePretradeReady.value = false
+    queuePretradeMessage.value = 'Complete Pre-Trade Plan (market regime + risk budget + snapshots) before Start Review.'
+    return
+  }
+  const snaps = await fetchSetupSnapshots({ pretrade_plan: plan.id, page_size: 50 })
+  const rows = (snaps.data?.results || snaps.data || [])
+  if (!rows.length || !rows.every(snapshotIsComplete)) {
+    queuePretradeReady.value = false
+    queuePretradeMessage.value = 'At least one complete setup snapshot is required before Start Review.'
+    return
+  }
+  queuePretradeReady.value = true
+  queuePretradeMessage.value = ''
+}
+
 async function loadAnalytics() {
   loadingAnalytics.value = true
   try {
+    analyticsError.value = ''
     const res = await fetchTradeReviewAnalyticsSummary()
-    analytics.value = res.data || { by_strategy: [], by_session: [], by_symbol: [] }
+    analytics.value = res.data || { by_strategy: [], by_session: [], by_symbol: [], strategy_edge_ranking: [], mistake_impact: [], plan_adherence: {}, insights: [] }
+    const keys = (analytics.value[compareDimension.value] || []).map((row) => row.key)
+    compareLeftKey.value = keys[0] || ''
+    compareRightKey.value = keys[1] || keys[0] || ''
+  } catch (error) {
+    analyticsError.value = error?.response?.data?.detail || 'Failed to load analytics.'
   } finally {
     loadingAnalytics.value = false
   }
@@ -676,7 +1180,6 @@ async function saveDailyReview(mode = 'draft') {
   } finally {
     savingDaily.value = false
   }
-  positionSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function focusFirstPending() {
@@ -706,6 +1209,65 @@ onMounted(async () => {
   grid-template-columns: repeat(auto-fit, minmax(180px, 220px));
   gap: 10px 14px;
   align-items: end;
+}
+
+.review-workspace-page {
+  background: #f7f8fa;
+  padding-bottom: 16px;
+}
+
+.workspace-summary-card,
+.workspace-primary-card,
+.workspace-secondary-card,
+.workspace-tertiary-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.workspace-primary-card {
+  border-color: #bfdbfe;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
+}
+
+.workspace-secondary-card {
+  background: #f8fafc;
+}
+
+.workspace-tertiary-card {
+  background: #fafafa;
+  opacity: 0.96;
+}
+
+.workspace-summary-card .stat-pill {
+  background: #ffffff;
+  border: 1px solid #dbe3f4;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.workspace-summary-card .stat-value {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.workspace-summary-card .stat-label {
+  color: #64748b;
+}
+
+.tv-panel-tabs .tv-subtab {
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #64748b;
+  padding: 8px 12px;
+}
+
+.tv-panel-tabs .tv-subtab.active {
+  color: #0f172a;
+  border-bottom-color: #2563eb;
+  background: transparent;
 }
 
 .trade-card-grid {
@@ -766,6 +1328,43 @@ onMounted(async () => {
   gap: 6px;
 }
 
+.pretrade-module-card {
+  margin-top: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+  padding: 14px;
+}
+
+.pretrade-checklist-grid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px 10px;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.check-on {
+  background: #ecfdf5;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.check-off {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
 .workspace-field-grid :deep(input),
 .workspace-field-grid :deep(select),
 .workspace-summary-grid :deep(input),
@@ -814,6 +1413,261 @@ onMounted(async () => {
   margin-top: 8px;
   color: #b91c1c;
   font-size: 12px;
+}
+
+.save-warning {
+  margin-top: 8px;
+  color: #92400e;
+  font-size: 12px;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.risk-dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+}
+
+.risk-safe {
+  background: #ecfdf5;
+  border-color: #86efac;
+}
+
+.risk-warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.risk-danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.status-good,
+.status-good-block {
+  color: #166534;
+}
+
+.status-bad,
+.status-bad-block {
+  color: #b91c1c;
+}
+
+.status-good-block,
+.status-bad-block {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.status-good-block {
+  background: #ecfdf5;
+  border-color: #86efac;
+}
+
+.status-bad-block {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.risk-progress {
+  grid-column: 1 / -1;
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.risk-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+}
+
+.logic-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.analytics-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.analytics-surface {
+  background: #f8fafc;
+}
+
+.analytics-panel-card {
+  border: 1px solid #dbe3f4;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+.kpi-card {
+  border: 1px solid #dbe3f4;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.kpi-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.kpi-value {
+  margin-top: 4px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.kpi-positive {
+  color: #15803d;
+}
+
+.kpi-negative {
+  color: #b91c1c;
+}
+
+.insight-highlight-card {
+  margin-top: 10px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.analytics-table-wrap {
+  overflow-x: auto;
+}
+
+.analytics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.analytics-table th,
+.analytics-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.analytics-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.analytics-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.timeline-day-card {
+  border: 1px solid #dbe3f4;
+  border-radius: 12px;
+}
+
+.timeline-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.timeline-header-left,
+.timeline-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.timeline-pnl-pill {
+  font-size: 18px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.pnl-positive {
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.pnl-negative {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.timeline-tag-row {
+  margin: 6px 0 8px;
+}
+
+.timeline-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.timeline-mini-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  font-size: 13px;
+}
+
+.timeline-reflection-grid {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.timeline-reflection-box {
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  padding: 8px 10px;
+}
+
+.reflection-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.reflection-good {
+  background: #f0fdf4;
+}
+
+.reflection-bad {
+  background: #fef2f2;
+}
+
+.reflection-next {
+  background: #eff6ff;
+}
+
+.badge-muted {
+  background: #e5e7eb;
+  color: #374151;
 }
 
 .timeline-filter-grid {
