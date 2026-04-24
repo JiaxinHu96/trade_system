@@ -297,6 +297,11 @@
       </div>
       <div class="journal-text-grid" v-else>
         <div class="journal-entry-card">
+          <div class="section-title minor">Actionable Insights</div>
+          <div v-if="!(analytics.insights || []).length" class="muted-copy">Not enough data to generate insights.</div>
+          <div v-for="(line, idx) in analytics.insights || []" :key="`ins-${idx}`" class="review-item">• {{ line }}</div>
+        </div>
+        <div class="journal-entry-card">
           <div class="section-title minor">Portfolio Summary</div>
           <div class="muted-copy">Trades (N): {{ analytics.summary?.trades ?? 0 }} · Wins {{ analytics.summary?.wins ?? 0 }} · Losses {{ analytics.summary?.losses ?? 0 }}</div>
           <div class="muted-copy">Total PnL: {{ analytics.summary?.total_pnl ?? 0 }} · Expectancy: {{ analytics.summary?.expectancy ?? '-' }}</div>
@@ -321,6 +326,12 @@
           <div class="muted-copy" v-if="rightCompareRow">{{ compareRightKey }} → N {{ rightCompareRow.trades }} · Win {{ rightCompareRow.win_rate }}% · PnL {{ rightCompareRow.total_pnl }} · Exp {{ rightCompareRow.expectancy }} · PF {{ rightCompareRow.profit_factor ?? '-' }}</div>
         </div>
         <div>
+          <div class="section-title minor">Strategy Edge Ranking</div>
+          <div v-for="row in analytics.strategy_edge_ranking || []" :key="`edge-${row.key}`" class="review-item">
+            {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Action: {{ row.action }}
+          </div>
+        </div>
+        <div>
           <div class="section-title minor">By Strategy</div>
           <div v-for="row in analytics.by_strategy" :key="`s-${row.key}`" class="review-item">
             {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
@@ -333,6 +344,21 @@
           </div>
         </div>
       </div>
+      <div class="journal-text-grid" style="margin-top:10px;">
+        <div class="journal-entry-card">
+          <div class="section-title minor">Mistake Impact</div>
+          <div v-if="!(analytics.mistake_impact || []).length" class="muted-copy">No mistake-tag data yet.</div>
+          <div v-for="row in analytics.mistake_impact || []" :key="`mist-${row.key}`" class="review-item">
+            {{ row.key }} · N {{ row.trades }} · Avg R {{ row.avg_r ?? '-' }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }}
+          </div>
+        </div>
+        <div class="journal-entry-card">
+          <div class="section-title minor">Plan vs Actual Deviation</div>
+          <div class="review-item">Followed Plan: Exp {{ analytics.plan_adherence?.followed?.expectancy ?? '-' }} · Win {{ analytics.plan_adherence?.followed?.win_rate ?? '-' }}%</div>
+          <div class="review-item">Did NOT Follow: Exp {{ analytics.plan_adherence?.not_followed?.expectancy ?? '-' }} · Win {{ analytics.plan_adherence?.not_followed?.win_rate ?? '-' }}%</div>
+          <div class="review-item">Late Entry Rate: {{ analytics.plan_adherence?.late_entry_rate ?? '-' }}% · Broke Stop Rate: {{ analytics.plan_adherence?.broke_stop_rate ?? '-' }}% · Sample {{ analytics.plan_adherence?.compare_sample_size ?? 0 }}</div>
+        </div>
+      </div>
       <div>
         <div class="section-title minor">By Symbol</div>
         <div v-for="row in analytics.by_symbol" :key="`sym-${row.key}`" class="review-item">
@@ -340,9 +366,9 @@
         </div>
       </div>
       <div class="tv-dashboard-chart-grid tv-dashboard-chart-grid-triple" style="margin-top:12px;">
-        <TradesVizChart title="Equity Curve" subtitle="Cumulative realized PnL" :categories="equityCategories" :series="equitySeries" default-type="line" :height="180" />
-        <TradesVizChart title="R Distribution" subtitle="Per-trade R multiples" :categories="rDistributionCategories" :series="rDistributionSeries" default-type="bar" :height="180" />
-        <TradesVizChart title="Holding Time vs PnL" subtitle="Pattern view (proxy chart)" :categories="holdingScatterCategories" :series="holdingScatterSeries" default-type="line" :height="180" />
+        <TradesVizChart title="Equity Curve" subtitle="Cumulative realized PnL with baseline" :categories="equityCategories" :series="equitySeries" default-type="line" :height="180" />
+        <TradesVizChart title="R Distribution" subtitle="Per-trade R multiples + baseline" :categories="rDistributionCategories" :series="rDistributionSeries" default-type="bar" :height="180" />
+        <TradesVizChart title="Holding Time vs PnL" subtitle="Includes simple trend line" :categories="holdingScatterCategories" :series="holdingScatterSeries" default-type="line" :height="180" />
       </div>
     </section>
 
@@ -454,7 +480,7 @@ const pretradeError = ref('')
 const snapshotErrors = ref({})
 const queuePretradeReady = ref(true)
 const queuePretradeMessage = ref('')
-const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [] })
+const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [], strategy_edge_ranking: [], mistake_impact: [], plan_adherence: {}, insights: [] })
 const loadingAnalytics = ref(false)
 const analyticsError = ref('')
 const compareDimension = ref('by_strategy')
@@ -529,14 +555,41 @@ const comparisonOptions = computed(() => analyticsRowsForDimension.value.map((ro
 const leftCompareRow = computed(() => analyticsRowsForDimension.value.find((row) => row.key === compareLeftKey.value) || null)
 const rightCompareRow = computed(() => analyticsRowsForDimension.value.find((row) => row.key === compareRightKey.value) || null)
 const equityCategories = computed(() => (analytics.value.equity_curve || []).map((p) => p.date))
-const equitySeries = computed(() => [{ name: 'Equity', data: (analytics.value.equity_curve || []).map((p) => p.equity) }])
+const equitySeries = computed(() => {
+  const curve = (analytics.value.equity_curve || []).map((p) => p.equity)
+  return [
+    { name: 'Equity', data: curve },
+    { name: 'Baseline 0', data: curve.map(() => 0) },
+  ]
+})
 const rDistributionCategories = computed(() => (analytics.value.r_distribution || []).map((_, idx) => `T${idx + 1}`))
-const rDistributionSeries = computed(() => [{ name: 'R Multiple', data: analytics.value.r_distribution || [] }])
+const rDistributionSeries = computed(() => {
+  const dist = analytics.value.r_distribution || []
+  return [
+    { name: 'R Multiple', data: dist },
+    { name: 'Baseline 0', data: dist.map(() => 0) },
+  ]
+})
 const holdingScatterCategories = computed(() => (analytics.value.holding_vs_pnl || []).map((_, idx) => `P${idx + 1}`))
 const holdingScatterSeries = computed(() => [
   { name: 'Holding Minutes', data: (analytics.value.holding_vs_pnl || []).map((p) => p.holding_minutes) },
   { name: 'PnL', data: (analytics.value.holding_vs_pnl || []).map((p) => p.pnl) },
+  { name: 'PnL Trend', data: holdingTrend.value },
 ])
+const holdingTrend = computed(() => {
+  const rows = analytics.value.holding_vs_pnl || []
+  if (rows.length < 2) return rows.map((p) => p.pnl)
+  const n = rows.length
+  const xs = rows.map((_, idx) => idx + 1)
+  const ys = rows.map((p) => Number(p.pnl || 0))
+  const sumX = xs.reduce((a, b) => a + b, 0)
+  const sumY = ys.reduce((a, b) => a + b, 0)
+  const sumXY = xs.reduce((a, x, idx) => a + (x * ys[idx]), 0)
+  const sumXX = xs.reduce((a, x) => a + (x * x), 0)
+  const slope = ((n * sumXY) - (sumX * sumY)) / Math.max(1, ((n * sumXX) - (sumX * sumX)))
+  const intercept = (sumY - (slope * sumX)) / n
+  return xs.map((x) => Number((intercept + (slope * x)).toFixed(2)))
+})
 
 const filteredTimeline = computed(() => {
   return (dailyTimeline.value || []).filter((item) => {
@@ -929,7 +982,7 @@ async function loadAnalytics() {
   try {
     analyticsError.value = ''
     const res = await fetchTradeReviewAnalyticsSummary()
-    analytics.value = res.data || { by_strategy: [], by_session: [], by_symbol: [] }
+    analytics.value = res.data || { by_strategy: [], by_session: [], by_symbol: [], strategy_edge_ranking: [], mistake_impact: [], plan_adherence: {}, insights: [] }
     const keys = (analytics.value[compareDimension.value] || []).map((row) => row.key)
     compareLeftKey.value = keys[0] || ''
     compareRightKey.value = keys[1] || keys[0] || ''

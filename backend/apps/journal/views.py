@@ -367,15 +367,20 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='analytics-summary')
     def analytics_summary(self, request):
-        qs = self.get_queryset().select_related('trade_group', 'setup')
+        qs = self.get_queryset().select_related('trade_group', 'trade_group__pretrade_snapshot', 'setup').prefetch_related('mistake_tags')
         by_strategy = {}
         by_session = {}
         by_symbol = {}
+        mistake_impact = {}
+        followed_plan_bucket = {'followed': {}, 'not_followed': {}, 'unknown': {}}
         equity_points = []
         holding_vs_pnl = []
         r_values = []
         total_profit = 0.0
         total_loss_abs = 0.0
+        late_entry_count = 0
+        broke_stop_count = 0
+        plan_compare_count = 0
 
         ordered = sorted(
             list(qs),
@@ -387,6 +392,7 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
 
         for item in ordered:
             trade_group = item.trade_group
+            snapshot = getattr(trade_group, 'pretrade_snapshot', None) if trade_group else None
             realized_r = float(item.realized_r) if item.realized_r is not None else None
             realized_pnl = float(trade_group.realized_pnl) if trade_group and trade_group.realized_pnl is not None else 0.0
             hold_minutes = None
@@ -405,6 +411,18 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
                     'holding_minutes': round(hold_minutes, 2),
                     'pnl': round(realized_pnl, 2),
                 })
+            actual_entry = None
+            actual_exit = None
+            if trade_group:
+                actual_entry = trade_group.avg_buy_price if trade_group.direction == 'long' else trade_group.avg_sell_price
+                actual_exit = trade_group.avg_sell_price if trade_group.direction == 'long' else trade_group.avg_buy_price
+            if snapshot and snapshot.planned_entry is not None and actual_entry is not None:
+                plan_compare_count += 1
+                late_entry = (trade_group.direction == 'long' and actual_entry > snapshot.planned_entry) or (trade_group.direction == 'short' and actual_entry < snapshot.planned_entry)
+                late_entry_count += 1 if late_entry else 0
+            if snapshot and snapshot.planned_stop is not None and actual_exit is not None:
+                broke_stop = (trade_group.direction == 'long' and actual_exit < snapshot.planned_stop) or (trade_group.direction == 'short' and actual_exit > snapshot.planned_stop)
+                broke_stop_count += 1 if broke_stop else 0
 
             def _accumulate(bucket, key):
                 if not key:
@@ -425,9 +443,18 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
                 else:
                     row['loss_sum_abs'] += abs(realized_pnl)
 
-            _accumulate(by_strategy, item.strategy or (item.setup.name if item.setup else 'Unknown'))
+            strategy_key = item.strategy or (snapshot.strategy if snapshot and snapshot.strategy else None) or (item.setup.name if item.setup else None) or (snapshot.setup_type if snapshot else None) or 'Unknown'
+            _accumulate(by_strategy, strategy_key)
             _accumulate(by_session, item.session or 'unknown')
             _accumulate(by_symbol, trade_group.symbol if trade_group else 'unknown')
+            _accumulate(
+                followed_plan_bucket[
+                    'followed' if item.followed_plan is True else 'not_followed' if item.followed_plan is False else 'unknown'
+                ],
+                'all',
+            )
+            for tag in item.mistake_tags.all():
+                _accumulate(mistake_impact, tag.name)
             if trade_group and trade_group.closed_at:
                 equity_points.append({
                     'date': trade_group.closed_at.date().isoformat(),
@@ -453,6 +480,7 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
                     'expectancy': round(expectancy, 4) if expectancy is not None else None,
                     'profit_factor': round(profit_factor, 4) if profit_factor is not None else None,
                     'avg_holding_minutes': round(avg_holding_minutes, 2) if avg_holding_minutes is not None else None,
+                    'edge_score': round(((expectancy or 0.0) * (win_rate / 100)), 4),
                 })
             rows.sort(key=lambda x: x['trades'], reverse=True)
             return rows
@@ -470,11 +498,52 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
 
         wins = len([x for x in r_values if x > 0])
         losses = len([x for x in r_values if x <= 0])
+        strategy_rows = _finalize(by_strategy)
+        strategy_edge_ranking = sorted(strategy_rows, key=lambda x: ((x['expectancy'] or -999), x['trades']), reverse=True)
+        for row in strategy_edge_ranking:
+            if row['expectancy'] is None:
+                row['action'] = 'Need more R data'
+            elif row['expectancy'] >= 0.2 and row['trades'] >= 5:
+                row['action'] = 'Scale up'
+            elif row['expectancy'] < 0:
+                row['action'] = 'Reduce / fix execution'
+            else:
+                row['action'] = 'Keep observing'
+        followed_rows = {
+            key: (_finalize(bucket)[0] if bucket else None)
+            for key, bucket in followed_plan_bucket.items()
+        }
+        insights = []
+        if strategy_edge_ranking:
+            top = strategy_edge_ranking[0]
+            insights.append(f"Top edge strategy now: {top['key']} (Exp {top['expectancy']}, Win {top['win_rate']}%).")
+            worst = strategy_edge_ranking[-1]
+            if worst['expectancy'] is not None and top['key'] != worst['key']:
+                insights.append(f"Weakest strategy: {worst['key']} (Exp {worst['expectancy']}).")
+        if followed_rows['followed'] and followed_rows['not_followed']:
+            insights.append(
+                f"Followed plan Exp {followed_rows['followed']['expectancy']} vs Not-followed Exp {followed_rows['not_followed']['expectancy']}."
+            )
+        mistake_rows = sorted(_finalize(mistake_impact), key=lambda x: ((x['avg_r'] or 999), x['trades']))
+        if mistake_rows:
+            heavy = mistake_rows[0]
+            insights.append(f"Highest drag mistake: {heavy['key']} (Avg R {heavy['avg_r']}, PnL {heavy['total_pnl']}).")
 
         return Response({
-            'by_strategy': _finalize(by_strategy),
+            'by_strategy': strategy_rows,
             'by_session': _finalize(by_session),
             'by_symbol': _finalize(by_symbol),
+            'strategy_edge_ranking': strategy_edge_ranking,
+            'mistake_impact': mistake_rows,
+            'plan_adherence': {
+                'followed': followed_rows['followed'],
+                'not_followed': followed_rows['not_followed'],
+                'unknown': followed_rows['unknown'],
+                'late_entry_rate': round((late_entry_count / plan_compare_count) * 100, 2) if plan_compare_count else None,
+                'broke_stop_rate': round((broke_stop_count / plan_compare_count) * 100, 2) if plan_compare_count else None,
+                'compare_sample_size': plan_compare_count,
+            },
+            'insights': insights,
             'summary': {
                 'trades': len(ordered),
                 'wins': wins,
