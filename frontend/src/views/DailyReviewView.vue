@@ -295,19 +295,84 @@
       <div v-if="!analytics.by_strategy.length && !analytics.by_session.length && !analytics.by_symbol.length" class="empty-row">
         No analytics data yet. Save Trade Reviews with `realized_r` / `session` / `strategy` first.
       </div>
-      <div class="journal-text-grid" v-else>
-        <div class="journal-entry-card">
-          <div class="section-title minor">Actionable Insights</div>
+      <div v-else>
+        <div class="analytics-kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Trades</div>
+            <div class="kpi-value">{{ analytics.summary?.trades ?? 0 }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">PnL</div>
+            <div :class="['kpi-value', (analytics.summary?.total_pnl ?? 0) >= 0 ? 'kpi-positive' : 'kpi-negative']">{{ analytics.summary?.total_pnl ?? 0 }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Win Rate</div>
+            <div class="kpi-value">{{ summaryWinRate }}%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Profit Factor</div>
+            <div class="kpi-value">{{ analytics.summary?.profit_factor ?? '-' }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Max DD</div>
+            <div :class="['kpi-value', (analytics.summary?.max_drawdown ?? 0) >= 0 ? 'kpi-positive' : 'kpi-negative']">{{ analytics.summary?.max_drawdown ?? 0 }}</div>
+          </div>
+        </div>
+
+        <div class="insight-highlight-card">
+          <div class="section-title minor">💡 Actionable Insights</div>
           <div v-if="!(analytics.insights || []).length" class="muted-copy">Not enough data to generate insights.</div>
-          <div v-for="(line, idx) in analytics.insights || []" :key="`ins-${idx}`" class="review-item">• {{ line }}</div>
+          <div v-for="(line, idx) in analytics.insights || []" :key="`ins-${idx}`" class="review-item">👉 {{ line }}</div>
         </div>
-        <div class="journal-entry-card">
-          <div class="section-title minor">Portfolio Summary</div>
-          <div class="muted-copy">Trades (N): {{ analytics.summary?.trades ?? 0 }} · Wins {{ analytics.summary?.wins ?? 0 }} · Losses {{ analytics.summary?.losses ?? 0 }}</div>
-          <div class="muted-copy">Total PnL: {{ analytics.summary?.total_pnl ?? 0 }} · Expectancy: {{ analytics.summary?.expectancy ?? '-' }}</div>
-          <div class="muted-copy">Profit Factor: {{ analytics.summary?.profit_factor ?? '-' }} · Max Drawdown: {{ analytics.summary?.max_drawdown ?? 0 }}</div>
+
+        <div class="journal-entry-card" style="margin-top:10px;">
+          <div class="section-title minor">Strategy Edge Ranking</div>
+          <div class="analytics-table-wrap">
+            <table class="analytics-table">
+              <thead>
+                <tr>
+                  <th>Strategy</th><th>N</th><th>Win</th><th>Avg R</th><th>Exp</th><th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in analytics.strategy_edge_ranking || []" :key="`edge-${row.key}`">
+                  <td>{{ row.key }}</td>
+                  <td>{{ row.trades }}</td>
+                  <td>{{ row.win_rate }}%</td>
+                  <td>{{ row.avg_r ?? '-' }}</td>
+                  <td>{{ row.expectancy ?? '-' }}</td>
+                  <td>{{ row.action }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div class="journal-entry-card">
+
+        <div class="journal-text-grid" style="margin-top:10px;">
+          <div class="journal-entry-card">
+            <div class="section-title minor">🔥 Biggest Loss Drivers</div>
+            <div v-if="!(analytics.mistake_impact || []).length" class="muted-copy">No mistake-tag data yet.</div>
+            <div v-for="(row, idx) in analytics.mistake_impact || []" :key="`mist-${row.key}`" class="review-item">
+              {{ idx + 1 }}. {{ row.key }} → Avg R {{ row.avg_r ?? '-' }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }}
+            </div>
+          </div>
+          <div class="journal-entry-card">
+            <div class="section-title minor">📊 Execution Quality</div>
+            <div class="analytics-plan-grid">
+              <div class="timeline-reflection-box reflection-good">
+                <div class="reflection-title">✔ Followed Plan</div>
+                <div>Win {{ analytics.plan_adherence?.followed?.win_rate ?? '-' }}% · Exp {{ analytics.plan_adherence?.followed?.expectancy ?? '-' }}</div>
+              </div>
+              <div class="timeline-reflection-box reflection-bad">
+                <div class="reflection-title">❌ Did NOT Follow</div>
+                <div>Win {{ analytics.plan_adherence?.not_followed?.win_rate ?? '-' }}% · Exp {{ analytics.plan_adherence?.not_followed?.expectancy ?? '-' }}</div>
+              </div>
+            </div>
+            <div class="review-item">⚠ Late Entry {{ analytics.plan_adherence?.late_entry_rate ?? '-' }}% · ⚠ Broke Stop {{ analytics.plan_adherence?.broke_stop_rate ?? '-' }}% · Sample {{ analytics.plan_adherence?.compare_sample_size ?? 0 }}</div>
+          </div>
+        </div>
+
+        <div class="journal-entry-card" style="margin-top:10px;">
           <div class="section-title minor">Compare</div>
           <div class="journal-form-grid workspace-field-grid">
             <label><span>Dimension</span>
@@ -325,44 +390,26 @@
           <div class="muted-copy" v-if="leftCompareRow">{{ compareLeftKey }} → N {{ leftCompareRow.trades }} · Win {{ leftCompareRow.win_rate }}% · PnL {{ leftCompareRow.total_pnl }} · Exp {{ leftCompareRow.expectancy }} · PF {{ leftCompareRow.profit_factor ?? '-' }}</div>
           <div class="muted-copy" v-if="rightCompareRow">{{ compareRightKey }} → N {{ rightCompareRow.trades }} · Win {{ rightCompareRow.win_rate }}% · PnL {{ rightCompareRow.total_pnl }} · Exp {{ rightCompareRow.expectancy }} · PF {{ rightCompareRow.profit_factor ?? '-' }}</div>
         </div>
-        <div>
-          <div class="section-title minor">Strategy Edge Ranking</div>
-          <div v-for="row in analytics.strategy_edge_ranking || []" :key="`edge-${row.key}`" class="review-item">
-            {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Action: {{ row.action }}
+
+        <div class="journal-text-grid" style="margin-top:10px;">
+          <div>
+            <div class="section-title minor">By Strategy</div>
+            <div v-for="row in analytics.by_strategy" :key="`s-${row.key}`" class="review-item">
+              {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+            </div>
           </div>
-        </div>
-        <div>
-          <div class="section-title minor">By Strategy</div>
-          <div v-for="row in analytics.by_strategy" :key="`s-${row.key}`" class="review-item">
-            {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+          <div>
+            <div class="section-title minor">By Session</div>
+            <div v-for="row in analytics.by_session" :key="`ss-${row.key}`" class="review-item">
+              {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+            </div>
           </div>
-        </div>
-        <div>
-          <div class="section-title minor">By Session</div>
-          <div v-for="row in analytics.by_session" :key="`ss-${row.key}`" class="review-item">
-            {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+          <div>
+            <div class="section-title minor">By Symbol</div>
+            <div v-for="row in analytics.by_symbol" :key="`sym-${row.key}`" class="review-item">
+              {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+            </div>
           </div>
-        </div>
-      </div>
-      <div class="journal-text-grid" style="margin-top:10px;">
-        <div class="journal-entry-card">
-          <div class="section-title minor">Mistake Impact</div>
-          <div v-if="!(analytics.mistake_impact || []).length" class="muted-copy">No mistake-tag data yet.</div>
-          <div v-for="row in analytics.mistake_impact || []" :key="`mist-${row.key}`" class="review-item">
-            {{ row.key }} · N {{ row.trades }} · Avg R {{ row.avg_r ?? '-' }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }}
-          </div>
-        </div>
-        <div class="journal-entry-card">
-          <div class="section-title minor">Plan vs Actual Deviation</div>
-          <div class="review-item">Followed Plan: Exp {{ analytics.plan_adherence?.followed?.expectancy ?? '-' }} · Win {{ analytics.plan_adherence?.followed?.win_rate ?? '-' }}%</div>
-          <div class="review-item">Did NOT Follow: Exp {{ analytics.plan_adherence?.not_followed?.expectancy ?? '-' }} · Win {{ analytics.plan_adherence?.not_followed?.win_rate ?? '-' }}%</div>
-          <div class="review-item">Late Entry Rate: {{ analytics.plan_adherence?.late_entry_rate ?? '-' }}% · Broke Stop Rate: {{ analytics.plan_adherence?.broke_stop_rate ?? '-' }}% · Sample {{ analytics.plan_adherence?.compare_sample_size ?? 0 }}</div>
-        </div>
-      </div>
-      <div>
-        <div class="section-title minor">By Symbol</div>
-        <div v-for="row in analytics.by_symbol" :key="`sym-${row.key}`" class="review-item">
-          {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
         </div>
       </div>
       <div class="tv-dashboard-chart-grid tv-dashboard-chart-grid-triple" style="margin-top:12px;">
@@ -578,6 +625,12 @@ const analyticsRowsForDimension = computed(() => analytics.value?.[compareDimens
 const comparisonOptions = computed(() => analyticsRowsForDimension.value.map((row) => row.key))
 const leftCompareRow = computed(() => analyticsRowsForDimension.value.find((row) => row.key === compareLeftKey.value) || null)
 const rightCompareRow = computed(() => analyticsRowsForDimension.value.find((row) => row.key === compareRightKey.value) || null)
+const summaryWinRate = computed(() => {
+  const wins = Number(analytics.value?.summary?.wins || 0)
+  const trades = Number(analytics.value?.summary?.trades || 0)
+  if (!trades) return 0
+  return ((wins / trades) * 100).toFixed(1)
+})
 const equityCategories = computed(() => (analytics.value.equity_curve || []).map((p) => p.date))
 const equitySeries = computed(() => {
   const curve = (analytics.value.equity_curve || []).map((p) => p.equity)
@@ -1300,6 +1353,71 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.analytics-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.kpi-card {
+  border: 1px solid #dbe3f4;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.kpi-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.kpi-value {
+  margin-top: 4px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.kpi-positive {
+  color: #15803d;
+}
+
+.kpi-negative {
+  color: #b91c1c;
+}
+
+.insight-highlight-card {
+  margin-top: 10px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.analytics-table-wrap {
+  overflow-x: auto;
+}
+
+.analytics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.analytics-table th,
+.analytics-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.analytics-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .timeline-day-card {
