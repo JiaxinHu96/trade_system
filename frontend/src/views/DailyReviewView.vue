@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="review-workspace-page">
     <div class="dashboard-hero card compact-header-card">
       <div>
         <div class="dashboard-kicker">Trading Journal</div>
@@ -18,7 +18,7 @@
     </section>
 
     <template v-if="journalTab === 'workspace'">
-    <section class="card">
+    <section class="card workspace-summary-card">
       <div class="journal-form-grid workspace-summary-grid">
         <label :title="fieldHint('queue_date')"><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" /></label>
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
@@ -30,27 +30,33 @@
       </div>
     </section>
 
-    <section class="card" ref="tradeSectionRef">
+    <section class="card workspace-primary-card" ref="tradeSectionRef">
       <div class="section-title">Trade Review Cards</div>
       <div v-if="!queue.closed_trades?.length" class="empty-row">No closed trades for this day.</div>
       <div class="trade-card-grid">
         <div v-for="card in queue.closed_trades" :key="card.trade_group_id" class="journal-entry-card trade-review-card">
           <div class="trade-review-head">
             <div>
-              <div><strong>{{ card.symbol }}</strong> <span :class="['badge', card.realized_pnl >= 0 ? 'badge-profit' : 'badge-loss']">{{ card.realized_pnl }}</span> <span class="badge">{{ card.status }}</span></div>
+              <div><strong>{{ card.symbol }}</strong> <span :class="['timeline-pnl-pill', card.realized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative']">{{ card.realized_pnl }}</span> <span :class="['badge', tradeStatusClass(card.status)]">{{ card.status }}</span></div>
               <div class="muted-copy">
                 Hold {{ card.hold_minutes || '-' }}m ·
                 <span class="metric-with-tip">Exec {{ card.executions_count }}<span class="metric-tip">Exec = 该交易时间窗内的成交笔数（Raw Executions count）。</span></span> ·
                 <span class="metric-with-tip">Shots {{ card.screenshots_count }}<span class="metric-tip">Shots = 该笔复盘上传的截图数量。</span></span>
               </div>
-              <div class="muted-copy">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }} · Mistakes: {{ (card.mistake_tags || []).join(', ') || '-' }}</div>
+              <div class="muted-copy">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }}</div>
+              <div class="chip-wrap" v-if="(card.mistake_tags || []).length">
+                <span v-for="tag in card.mistake_tags" :key="`mist-${card.trade_group_id}-${tag}`" class="badge badge-loss">{{ tag }}</span>
+              </div>
               <div class="muted-copy">Plan vs Exec: entry {{ card.planned_entry ?? '-' }} → {{ card.actual_entry ?? '-' }} · stop {{ card.planned_stop ?? '-' }} · target {{ card.planned_target ?? '-' }}</div>
               <div class="chip-wrap">
                 <span v-if="card.late_entry" class="badge badge-loss">Late entry</span>
                 <span v-if="card.broke_stop_rule" class="badge badge-loss">Broke stop rule</span>
                 <span class="badge">Setup match: {{ card.setup_match == null ? '-' : (card.setup_match ? 'Yes' : 'No') }}</span>
               </div>
-              <div class="muted-copy">Missing: {{ (card.missing_items || []).join(' / ') || 'none' }}</div>
+              <div class="chip-wrap">
+                <span v-if="!(card.missing_items || []).length" class="badge badge-profit">Review complete</span>
+                <span v-for="item in card.missing_items || []" :key="`miss-${card.trade_group_id}-${item}`" :class="['badge', missingItemBadgeClass(item)]">Missing {{ item }}</span>
+              </div>
             </div>
             <div class="trade-review-progress">
               <div class="progress-bar"><div class="progress-fill" :style="{ width: `${card.review_completeness || 0}%` }"></div></div>
@@ -125,7 +131,7 @@
       </div>
     </section>
 
-    <section class="card" ref="dailySectionRef">
+    <section class="card workspace-secondary-card" ref="dailySectionRef">
       <div class="section-title">Daily Session Review</div>
       <div class="tv-panel-tabs" style="margin-bottom: 10px;">
         <button :class="['tv-subtab', { active: dailyAccordion === 'context' }]" @click="dailyAccordion='context'">Market Context</button>
@@ -181,7 +187,7 @@
       </div>
     </section>
 
-    <section class="card" ref="positionSectionRef">
+    <section class="card workspace-tertiary-card" ref="positionSectionRef">
       <div class="section-title">Open Position Checkpoints</div>
       <div v-if="!queue.open_positions?.length" class="empty-row">No open positions.</div>
       <div v-for="item in queue.open_positions" :key="item.trade_group_id" class="journal-entry-card" style="margin-bottom:10px;">
@@ -829,6 +835,19 @@ function timelineStatusClass(status) {
   return ''
 }
 
+function tradeStatusClass(status) {
+  const value = (status || '').toLowerCase()
+  if (value === 'closed') return 'badge-profit'
+  if (value === 'open') return 'badge-loss'
+  return 'badge-muted'
+}
+
+function missingItemBadgeClass(item) {
+  if (['strategy', 'setup'].includes(item)) return 'badge-loss'
+  if (['mistake_tags', 'screenshot'].includes(item)) return 'badge-warning'
+  return 'badge'
+}
+
 function mistakeNames(item) {
   const ids = item.mistake_tags || []
   return ids.map((id) => (mistakeTags.value || []).find((t) => t.id === id)?.name).filter(Boolean)
@@ -1169,6 +1188,65 @@ onMounted(async () => {
   align-items: end;
 }
 
+.review-workspace-page {
+  background: #f7f8fa;
+  padding-bottom: 16px;
+}
+
+.workspace-summary-card,
+.workspace-primary-card,
+.workspace-secondary-card,
+.workspace-tertiary-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.workspace-primary-card {
+  border-color: #bfdbfe;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
+}
+
+.workspace-secondary-card {
+  background: #f8fafc;
+}
+
+.workspace-tertiary-card {
+  background: #fafafa;
+  opacity: 0.96;
+}
+
+.workspace-summary-card .stat-pill {
+  background: #ffffff;
+  border: 1px solid #dbe3f4;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.workspace-summary-card .stat-value {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.workspace-summary-card .stat-label {
+  color: #64748b;
+}
+
+.tv-panel-tabs .tv-subtab {
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #64748b;
+  padding: 8px 12px;
+}
+
+.tv-panel-tabs .tv-subtab.active {
+  color: #0f172a;
+  border-bottom-color: #2563eb;
+  background: transparent;
+}
+
 .trade-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
@@ -1281,6 +1359,11 @@ onMounted(async () => {
   margin-top: 8px;
   color: #92400e;
   font-size: 12px;
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .risk-dashboard {
