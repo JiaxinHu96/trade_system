@@ -72,6 +72,14 @@
                   <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
                 </select>
               </label>
+              <label><span>Linked Snapshot *</span>
+                <select v-model="tradeReviewForms[card.trade_group_id].selected_snapshot">
+                  <option :value="null">-</option>
+                  <option v-for="opt in card.snapshot_options || []" :key="opt.id" :value="opt.id">
+                    #{{ opt.id }} · {{ opt.setup_type }} · {{ opt.timeframe }} · Entry {{ opt.planned_entry ?? '-' }}
+                  </option>
+                </select>
+              </label>
               <label :title="fieldHint('grade')"><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
               <label :title="fieldHint('would_take_again')"><span>Would take again</span><select v-model="tradeReviewForms[card.trade_group_id].would_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
               <label :title="fieldHint('entry_q')"><span>Entry Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /></label>
@@ -207,6 +215,9 @@
       <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
       <div>
         <span>Checklist</span>
+        <div class="muted-copy" :class="pretradeChecklistPassed ? 'status-good' : 'status-bad'">
+          Checklist Score: {{ checklistPassCount }}/{{ checklistTotal }} · {{ pretradeChecklistPassed ? 'Passed' : 'Not passed' }}
+        </div>
         <div class="chip-wrap" style="margin-top:6px;">
           <label><input type="checkbox" v-model="pretradeChecklist.market_trending" /> Market trending</label>
           <label><input type="checkbox" v-model="pretradeChecklist.volume_above_average" /> Volume above average</label>
@@ -214,7 +225,13 @@
           <label><input type="checkbox" v-model="pretradeChecklist.clean_structure" /> Clean structure</label>
         </div>
       </div>
-      <div class="muted-copy">Risk used today: {{ usedRiskR.toFixed(2) }}R · Remaining: {{ remainingRiskR.toFixed(2) }}R <span v-if="remainingRiskR < 0" class="save-error"> (Over budget)</span></div>
+      <div class="risk-dashboard" :class="riskStatusClass">
+        <div><strong>Risk Dashboard</strong></div>
+        <div>Used: {{ usedRiskR.toFixed(2) }}R</div>
+        <div>Remaining: {{ remainingRiskR.toFixed(2) }}R</div>
+        <div>Max: {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R</div>
+      </div>
+      <div v-if="riskLimitReached" class="save-error">Risk budget reached. New setup snapshots are blocked until budget is increased.</div>
       <div class="save-error" v-if="pretradeError">{{ pretradeError }}</div>
       <div class="filter-action-row">
         <button @click="savePretrade" :disabled="savingPretrade">{{ savingPretrade ? 'Saving...' : 'Save Pre-Trade Plan' }}</button>
@@ -222,33 +239,40 @@
 
       <div class="section-title" style="margin-top:14px;">Setup Snapshots</div>
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
-        <div class="journal-form-grid trade-review-form-grid">
+        <div class="section-title minor">Basic</div>
+        <div class="journal-form-grid workspace-field-grid">
           <label><span>Symbol *</span><input v-model="row.symbol" /></label>
           <label><span>Strategy *</span><input v-model="row.strategy" /></label>
           <label><span>Direction *</span><select v-model="row.direction"><option value="long">long</option><option value="short">short</option></select></label>
+        </div>
+        <div class="section-title minor">Setup</div>
+        <div class="journal-form-grid workspace-field-grid">
           <label><span>Setup Type *</span><select v-model="row.setup_type"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
           <label><span>Timeframe *</span><select v-model="row.timeframe"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
           <label><span>Confidence (1-10)</span><input type="number" min="1" max="10" v-model.number="row.confidence_score" /></label>
           <label><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-          <label><span>Checklist passed</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
+          <label><span>Checklist passed *</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
         </div>
+        <div class="section-title minor">Execution Plan</div>
         <div class="journal-form-grid workspace-field-grid">
           <label><span>Planned Entry *</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
           <label><span>Planned Stop *</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
           <label><span>Planned Target *</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
         </div>
+        <div class="section-title minor">Logic</div>
         <div class="journal-form-grid workspace-field-grid">
           <label><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
           <label><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
         </div>
+        <div v-if="!row.checklist_passed" class="save-error">Checklist not passed. Snapshot cannot be saved.</div>
         <label><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
         <label><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
         <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
         <div class="filter-action-row">
-          <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
+          <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id || riskLimitReached">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
         </div>
       </div>
-      <button class="secondary" @click="addSnapshotRow">Add Snapshot</button>
+      <button class="secondary" @click="addSnapshotRow" :disabled="riskLimitReached">Add Snapshot</button>
     </section>
 
     <section v-else-if="journalTab === 'analytics'" class="card">
@@ -540,6 +564,7 @@ function hydrateCardForms(cards) {
     const review = card.trade_review || {}
     next[card.trade_group_id] = {
       trade_group: card.trade_group_id,
+      selected_snapshot: card.selected_snapshot_id || null,
       strategy: review.strategy || '',
       setup: review.setup || null,
       final_grade: review.final_grade || '',
@@ -680,6 +705,10 @@ async function saveCardReview(tradeGroupId) {
   savingTrade.value = tradeGroupId
   try {
     const payload = { ...tradeReviewForms.value[tradeGroupId] }
+    if (!payload.selected_snapshot) {
+      tradeSaveErrors.value[tradeGroupId] = 'Please link a setup snapshot before saving trade review.'
+      return
+    }
     payload.entry_quality = normalizeScore(payload.entry_quality)
     payload.exit_quality = normalizeScore(payload.exit_quality)
     payload.risk_management = normalizeScore(payload.risk_management)
@@ -761,6 +790,10 @@ async function savePretrade() {
       pretradeError.value = 'At least 1 setup snapshot is required.'
       return
     }
+    if (!pretradeChecklistPassed.value) {
+      pretradeError.value = 'Checklist must be fully passed before saving plan.'
+      return
+    }
     const payload = {
       ...pretradeForm.value,
       plan_date: pretradeDate.value,
@@ -782,6 +815,14 @@ function addSnapshotRow() {
 async function saveSnapshot(row) {
   if (!pretradeForm.value.id) await savePretrade()
   snapshotErrors.value[row.local_id] = ''
+  if (riskLimitReached.value) {
+    snapshotErrors.value[row.local_id] = 'Risk budget reached. Increase budget before adding new snapshot.'
+    return
+  }
+  if (!row.checklist_passed) {
+    snapshotErrors.value[row.local_id] = 'Checklist not passed. Please pass checklist before saving snapshot.'
+    return
+  }
   if (!row.strategy || row.planned_entry == null || row.planned_stop == null || row.planned_target == null) {
     snapshotErrors.value[row.local_id] = 'Strategy, planned entry, stop, target are required.'
     return
@@ -810,9 +851,19 @@ const remainingRiskR = computed(() => {
   const budget = Number(pretradeForm.value.risk_budget_r || 0)
   return budget - usedRiskR.value
 })
+const riskLimitReached = computed(() => remainingRiskR.value <= 0)
+const riskStatusClass = computed(() => {
+  if (remainingRiskR.value <= 0) return 'risk-danger'
+  if (remainingRiskR.value <= 0.5) return 'risk-warning'
+  return 'risk-safe'
+})
+const checklistKeys = ['market_trending', 'volume_above_average', 'no_major_news_risk', 'clean_structure']
+const checklistTotal = checklistKeys.length
+const checklistPassCount = computed(() => checklistKeys.reduce((sum, key) => sum + (pretradeChecklist.value[key] ? 1 : 0), 0))
+const pretradeChecklistPassed = computed(() => checklistPassCount.value === checklistTotal)
 
 function snapshotIsComplete(row) {
-  return Boolean(row.strategy && row.planned_entry != null && row.planned_stop != null && row.planned_target != null)
+  return Boolean(row.strategy && row.planned_entry != null && row.planned_stop != null && row.planned_target != null && row.checklist_passed)
 }
 
 async function loadQueuePretradeStatus() {
@@ -827,7 +878,7 @@ async function loadQueuePretradeStatus() {
   const rows = (snaps.data?.results || snaps.data || [])
   if (!rows.length || !rows.every(snapshotIsComplete)) {
     queuePretradeReady.value = false
-    queuePretradeMessage.value = 'At least one complete setup snapshot is required before Start Review.'
+    queuePretradeMessage.value = 'At least one complete setup snapshot (including checklist passed) is required before Start Review.'
     return
   }
   queuePretradeReady.value = true
@@ -1049,6 +1100,39 @@ onMounted(async () => {
   margin-top: 8px;
   color: #b91c1c;
   font-size: 12px;
+}
+
+.risk-dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+}
+
+.risk-safe {
+  background: #ecfdf5;
+  border-color: #86efac;
+}
+
+.risk-warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.risk-danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.status-good {
+  color: #166534;
+}
+
+.status-bad {
+  color: #b91c1c;
 }
 
 .timeline-filter-grid {

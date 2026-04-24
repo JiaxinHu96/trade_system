@@ -162,19 +162,33 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
             trade_review = getattr(group, 'trade_review', None) if trade_review_enabled else None
             pretrade = PreTradePlan.objects.filter(plan_date=selected_date).first()
             snapshot = None
+            snapshot_options = []
             if pretrade:
-                snapshot = pretrade.setup_snapshots.filter(Q(trade_group_id=group.id) | Q(symbol__iexact=group.symbol)).order_by('-updated_at').first()
+                symbol_snapshots_qs = pretrade.setup_snapshots.filter(symbol__iexact=group.symbol).order_by('-updated_at')
+                snapshot_options = [{
+                    'id': row.id,
+                    'symbol': row.symbol,
+                    'strategy': row.strategy,
+                    'setup_type': row.setup_type,
+                    'timeframe': row.timeframe,
+                    'planned_entry': row.planned_entry,
+                    'checklist_passed': row.checklist_passed,
+                    'is_bound': bool(row.trade_group_id),
+                    'trade_group_id': row.trade_group_id,
+                } for row in symbol_snapshots_qs]
+                snapshot = symbol_snapshots_qs.filter(Q(trade_group_id=group.id) | Q(trade_group__isnull=True)).first()
+            selected_snapshot = getattr(group, 'pretrade_snapshot', None) or snapshot
             actual_entry = group.avg_buy_price if group.direction == 'long' else group.avg_sell_price
             actual_exit = group.avg_sell_price if group.direction == 'long' else group.avg_buy_price
             late_entry = False
             broke_stop_rule = False
             setup_match = None
-            if snapshot and snapshot.planned_entry is not None and actual_entry is not None:
-                late_entry = (group.direction == 'long' and actual_entry > snapshot.planned_entry) or (group.direction == 'short' and actual_entry < snapshot.planned_entry)
-            if snapshot and snapshot.planned_stop is not None and actual_exit is not None:
-                broke_stop_rule = (group.direction == 'long' and actual_exit < snapshot.planned_stop) or (group.direction == 'short' and actual_exit > snapshot.planned_stop)
-            if snapshot and trade_review and trade_review.setup:
-                setup_match = trade_review.setup.name.lower().startswith(snapshot.setup_type.lower())
+            if selected_snapshot and selected_snapshot.planned_entry is not None and actual_entry is not None:
+                late_entry = (group.direction == 'long' and actual_entry > selected_snapshot.planned_entry) or (group.direction == 'short' and actual_entry < selected_snapshot.planned_entry)
+            if selected_snapshot and selected_snapshot.planned_stop is not None and actual_exit is not None:
+                broke_stop_rule = (group.direction == 'long' and actual_exit < selected_snapshot.planned_stop) or (group.direction == 'short' and actual_exit > selected_snapshot.planned_stop)
+            if selected_snapshot and trade_review and trade_review.setup:
+                setup_match = trade_review.setup.name.lower().startswith(selected_snapshot.setup_type.lower())
             executions_qs = RawIBKRExecution.objects.filter(symbol=group.symbol)
             if group.opened_at:
                 executions_qs = executions_qs.filter(executed_at__gte=group.opened_at)
@@ -193,12 +207,14 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
                 'hold_minutes': _hold_minutes(group),
                 'executions_count': executions_count,
                 'screenshots_count': len(trade_review.screenshots or []) if trade_review else 0,
-                'planned_entry': snapshot.planned_entry if snapshot else None,
-                'planned_stop': snapshot.planned_stop if snapshot else None,
-                'planned_target': snapshot.planned_target if snapshot else None,
-                'planned_direction': snapshot.direction if snapshot else '',
-                'planned_setup_type': snapshot.setup_type if snapshot else '',
-                'planned_timeframe': snapshot.timeframe if snapshot else '',
+                'planned_entry': selected_snapshot.planned_entry if selected_snapshot else None,
+                'planned_stop': selected_snapshot.planned_stop if selected_snapshot else None,
+                'planned_target': selected_snapshot.planned_target if selected_snapshot else None,
+                'planned_direction': selected_snapshot.direction if selected_snapshot else '',
+                'planned_setup_type': selected_snapshot.setup_type if selected_snapshot else '',
+                'planned_timeframe': selected_snapshot.timeframe if selected_snapshot else '',
+                'selected_snapshot_id': selected_snapshot.id if selected_snapshot else None,
+                'snapshot_options': snapshot_options,
                 'actual_entry': actual_entry,
                 'actual_exit': actual_exit,
                 'late_entry': late_entry,
