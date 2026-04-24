@@ -172,6 +172,7 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
                     'setup_type': row.setup_type,
                     'timeframe': row.timeframe,
                     'planned_entry': row.planned_entry,
+                    'planned_risk_r': row.planned_risk_r,
                     'checklist_passed': row.checklist_passed,
                     'is_bound': bool(row.trade_group_id),
                     'trade_group_id': row.trade_group_id,

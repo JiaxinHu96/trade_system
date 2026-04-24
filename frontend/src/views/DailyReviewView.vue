@@ -76,7 +76,7 @@
                 <select v-model="tradeReviewForms[card.trade_group_id].selected_snapshot">
                   <option :value="null">-</option>
                   <option v-for="opt in card.snapshot_options || []" :key="opt.id" :value="opt.id">
-                    #{{ opt.id }} · {{ opt.setup_type }} · {{ opt.timeframe }} · Entry {{ opt.planned_entry ?? '-' }}
+                    #{{ opt.id }} · {{ opt.setup_type }} · {{ opt.timeframe }} · Entry {{ opt.planned_entry ?? '-' }} · Risk {{ opt.planned_risk_r ?? '-' }}R
                   </option>
                 </select>
               </label>
@@ -215,7 +215,7 @@
       <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
       <div>
         <span>Checklist</span>
-        <div class="muted-copy" :class="pretradeChecklistPassed ? 'status-good' : 'status-bad'">
+        <div class="checklist-banner" :class="pretradeChecklistPassed ? 'status-good-block' : 'status-bad-block'">
           Checklist Score: {{ checklistPassCount }}/{{ checklistTotal }} · {{ pretradeChecklistPassed ? 'Passed' : 'Not passed' }}
         </div>
         <div class="chip-wrap" style="margin-top:6px;">
@@ -227,9 +227,13 @@
       </div>
       <div class="risk-dashboard" :class="riskStatusClass">
         <div><strong>Risk Dashboard</strong></div>
-        <div>Used: {{ usedRiskR.toFixed(2) }}R</div>
-        <div>Remaining: {{ remainingRiskR.toFixed(2) }}R</div>
-        <div>Max: {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R</div>
+        <div>🟢 Used: {{ usedRiskR.toFixed(2) }}R</div>
+        <div>🟡 Remaining: {{ remainingRiskR.toFixed(2) }}R</div>
+        <div>🔴 Max: {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R</div>
+        <div class="risk-progress">
+          <div class="risk-progress-fill" :style="{ width: `${usedRiskPct}%` }"></div>
+        </div>
+        <div class="muted-copy">[{{ riskProgressBar }}] {{ usedRiskPct.toFixed(0) }}%</div>
       </div>
       <div v-if="riskLimitReached" class="save-error">Risk budget reached. New setup snapshots are blocked until budget is increased.</div>
       <div class="save-error" v-if="pretradeError">{{ pretradeError }}</div>
@@ -258,18 +262,25 @@
           <label><span>Planned Entry *</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
           <label><span>Planned Stop *</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
           <label><span>Planned Target *</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
+          <label><span>Planned Risk (R) *</span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" /></label>
         </div>
-        <div class="section-title minor">Logic</div>
-        <div class="journal-form-grid workspace-field-grid">
-          <label><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
-          <label><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
+        <div class="muted-copy" :class="confidenceClass(row.confidence_score)">Confidence signal: {{ confidenceSignal(row.confidence_score) }}</div>
+        <div class="section-title minor logic-toggle-row">
+          <span>Logic</span>
+          <button type="button" class="secondary small-btn" @click="toggleSnapshotLogic(row.local_id)">{{ expandedSnapshotLogic.includes(row.local_id) ? 'Hide Logic' : 'Show Logic' }}</button>
         </div>
-        <div v-if="!row.checklist_passed" class="save-error">Checklist not passed. Snapshot cannot be saved.</div>
-        <label><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
-        <label><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
+        <div v-if="expandedSnapshotLogic.includes(row.local_id)">
+          <div class="journal-form-grid workspace-field-grid">
+            <label><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
+            <label><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
+          </div>
+          <label><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
+          <label><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
+        </div>
+        <div v-if="!row.checklist_passed" class="save-warning">Checklist not fully passed — allowed, but review confidence should be conservative.</div>
         <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
         <div class="filter-action-row">
-          <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id || riskLimitReached">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
+          <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
         </div>
       </div>
       <button class="secondary" @click="addSnapshotRow" :disabled="riskLimitReached">Add Snapshot</button>
@@ -436,6 +447,7 @@ const pretradeForm = ref({ id: null, plan_date: pretradeDate.value, session: 'pr
 const watchlistText = ref('')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
+const expandedSnapshotLogic = ref([])
 const savingPretrade = ref(false)
 const savingSnapshotId = ref(null)
 const pretradeError = ref('')
@@ -539,9 +551,30 @@ const filteredTimeline = computed(() => {
 
 function toggleCard(id) { expandedCards.value = expandedCards.value.includes(id) ? expandedCards.value.filter((v) => v !== id) : [...expandedCards.value, id] }
 function togglePosition(id) { expandedPositions.value = expandedPositions.value.includes(id) ? expandedPositions.value.filter((v) => v !== id) : [...expandedPositions.value, id] }
+function toggleSnapshotLogic(localId) {
+  expandedSnapshotLogic.value = expandedSnapshotLogic.value.includes(localId)
+    ? expandedSnapshotLogic.value.filter((v) => v !== localId)
+    : [...expandedSnapshotLogic.value, localId]
+}
 function openDatePicker(event) {
   const dateInput = event?.target
   if (dateInput && typeof dateInput.showPicker === 'function') dateInput.showPicker()
+}
+
+function confidenceSignal(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 'Not set'
+  if (n < 5) return 'Low confidence (<5): not recommended'
+  if (n >= 8) return 'High confidence'
+  return 'Normal confidence'
+}
+
+function confidenceClass(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return ''
+  if (n < 5) return 'status-bad'
+  if (n >= 8) return 'status-good'
+  return ''
 }
 
 function toggleDailyMistakeTag(tagId) {
@@ -752,6 +785,7 @@ function buildLocalSnapshot(item = {}) {
     planned_entry: item.planned_entry,
     planned_stop: item.planned_stop,
     planned_target: item.planned_target,
+    planned_risk_r: item.planned_risk_r,
     checklist_passed: item.checklist_passed ?? false,
     snapshot_notes: item.snapshot_notes || '',
   }
@@ -766,11 +800,13 @@ async function loadPretrade() {
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false, ...(existing.pre_trade_checklist || {}) }
     const snaps = await fetchSetupSnapshots({ pretrade_plan: existing.id, page_size: 50 })
     snapshotForms.value = (snaps.data?.results || snaps.data || []).map((item) => buildLocalSnapshot(item))
+    expandedSnapshotLogic.value = []
   } else {
     pretradeForm.value = { id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' }
     watchlistText.value = ''
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false }
     snapshotForms.value = [buildLocalSnapshot()]
+    expandedSnapshotLogic.value = []
   }
 }
 
@@ -788,10 +824,6 @@ async function savePretrade() {
     }
     if (!snapshotForms.value.length) {
       pretradeError.value = 'At least 1 setup snapshot is required.'
-      return
-    }
-    if (!pretradeChecklistPassed.value) {
-      pretradeError.value = 'Checklist must be fully passed before saving plan.'
       return
     }
     const payload = {
@@ -815,16 +847,21 @@ function addSnapshotRow() {
 async function saveSnapshot(row) {
   if (!pretradeForm.value.id) await savePretrade()
   snapshotErrors.value[row.local_id] = ''
-  if (riskLimitReached.value) {
-    snapshotErrors.value[row.local_id] = 'Risk budget reached. Increase budget before adding new snapshot.'
+  if (!(Number(row.planned_risk_r) > 0)) {
+    snapshotErrors.value[row.local_id] = 'Planned risk (R) is required and must be greater than 0.'
     return
   }
-  if (!row.checklist_passed) {
-    snapshotErrors.value[row.local_id] = 'Checklist not passed. Please pass checklist before saving snapshot.'
+  const otherRowsRisk = snapshotForms.value
+    .filter((item) => item.local_id !== row.local_id)
+    .reduce((sum, item) => sum + Number(item.planned_risk_r || 0), 0)
+  const nextUsed = otherRowsRisk + Number(row.planned_risk_r || 0)
+  const budget = Number(pretradeForm.value.risk_budget_r || 0)
+  if (budget > 0 && nextUsed > budget) {
+    snapshotErrors.value[row.local_id] = `Planned risk would exceed budget (${nextUsed.toFixed(2)}R / ${budget.toFixed(2)}R).`
     return
   }
   if (!row.strategy || row.planned_entry == null || row.planned_stop == null || row.planned_target == null) {
-    snapshotErrors.value[row.local_id] = 'Strategy, planned entry, stop, target are required.'
+    snapshotErrors.value[row.local_id] = 'Strategy, planned entry, stop, target, and planned risk are required.'
     return
   }
   savingSnapshotId.value = row.local_id
@@ -838,24 +875,26 @@ async function saveSnapshot(row) {
   }
 }
 
-const usedRiskR = computed(() => {
-  const cards = queue.value.closed_trades || []
-  return cards.reduce((sum, c) => {
-    const r = Number(c.trade_review?.realized_r)
-    if (!Number.isFinite(r)) return sum
-    return sum + (r < 0 ? Math.abs(r) : 0)
-  }, 0)
-})
+const usedRiskR = computed(() => snapshotForms.value.reduce((sum, row) => sum + Number(row.planned_risk_r || 0), 0))
 
 const remainingRiskR = computed(() => {
   const budget = Number(pretradeForm.value.risk_budget_r || 0)
   return budget - usedRiskR.value
 })
+const usedRiskPct = computed(() => {
+  const budget = Number(pretradeForm.value.risk_budget_r || 0)
+  if (!(budget > 0)) return 0
+  return Math.min(100, Math.max(0, (usedRiskR.value / budget) * 100))
+})
 const riskLimitReached = computed(() => remainingRiskR.value <= 0)
 const riskStatusClass = computed(() => {
-  if (remainingRiskR.value <= 0) return 'risk-danger'
-  if (remainingRiskR.value <= 0.5) return 'risk-warning'
+  if (usedRiskPct.value >= 100) return 'risk-danger'
+  if (usedRiskPct.value >= 75) return 'risk-warning'
   return 'risk-safe'
+})
+const riskProgressBar = computed(() => {
+  const filled = Math.round(usedRiskPct.value / 10)
+  return `${'█'.repeat(filled)}${'░'.repeat(Math.max(0, 10 - filled))}`
 })
 const checklistKeys = ['market_trending', 'volume_above_average', 'no_major_news_risk', 'clean_structure']
 const checklistTotal = checklistKeys.length
@@ -863,7 +902,7 @@ const checklistPassCount = computed(() => checklistKeys.reduce((sum, key) => sum
 const pretradeChecklistPassed = computed(() => checklistPassCount.value === checklistTotal)
 
 function snapshotIsComplete(row) {
-  return Boolean(row.strategy && row.planned_entry != null && row.planned_stop != null && row.planned_target != null && row.checklist_passed)
+  return Boolean(row.strategy && row.planned_entry != null && row.planned_stop != null && row.planned_target != null && Number(row.planned_risk_r || 0) > 0)
 }
 
 async function loadQueuePretradeStatus() {
@@ -878,7 +917,7 @@ async function loadQueuePretradeStatus() {
   const rows = (snaps.data?.results || snaps.data || [])
   if (!rows.length || !rows.every(snapshotIsComplete)) {
     queuePretradeReady.value = false
-    queuePretradeMessage.value = 'At least one complete setup snapshot (including checklist passed) is required before Start Review.'
+    queuePretradeMessage.value = 'At least one complete setup snapshot is required before Start Review.'
     return
   }
   queuePretradeReady.value = true
@@ -1102,6 +1141,12 @@ onMounted(async () => {
   font-size: 12px;
 }
 
+.save-warning {
+  margin-top: 8px;
+  color: #92400e;
+  font-size: 12px;
+}
+
 .risk-dashboard {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -1127,12 +1172,51 @@ onMounted(async () => {
   border-color: #fca5a5;
 }
 
-.status-good {
+.status-good,
+.status-good-block {
   color: #166534;
 }
 
-.status-bad {
+.status-bad,
+.status-bad-block {
   color: #b91c1c;
+}
+
+.status-good-block,
+.status-bad-block {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.status-good-block {
+  background: #ecfdf5;
+  border-color: #86efac;
+}
+
+.status-bad-block {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.risk-progress {
+  grid-column: 1 / -1;
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.risk-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+}
+
+.logic-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .timeline-filter-grid {
