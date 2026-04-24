@@ -286,10 +286,14 @@
       <div class="journal-form-grid timeline-filter-grid">
         <label :title="fieldHint('date_from')"><span>Date From</span><input v-model="timelineDateFrom" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
         <label :title="fieldHint('date_to')"><span>Date To</span><input v-model="timelineDateTo" type="date" @change="loadTimeline" @click="openDatePicker" @focus="openDatePicker" /></label>
+        <label><span>Strategy contains</span><input v-model="timelineStrategyQuery" placeholder="breakout / opening..." /></label>
+        <label><span>Session</span><select v-model="timelineSessionFilter"><option value="">All</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option><option value="overnight">overnight</option></select></label>
+        <label><span>Loss days only</span><select v-model="timelineLossOnly"><option :value="false">No</option><option :value="true">Yes</option></select></label>
+        <label><span>Low emotion only (<=4)</span><select v-model="timelineLowEmotionOnly"><option :value="false">No</option><option :value="true">Yes</option></select></label>
         <button class="secondary" @click="loadTimeline">Refresh</button>
       </div>
-      <div v-if="!dailyTimeline.length" class="empty-row">No daily reviews yet.</div>
-      <div v-for="item in dailyTimeline" :key="item.id" class="journal-entry-card" style="margin-bottom:10px;">
+      <div v-if="!filteredTimeline.length" class="empty-row">No daily reviews matched the filters.</div>
+      <div v-for="item in filteredTimeline" :key="item.id" class="journal-entry-card" style="margin-bottom:10px;">
         <div class="journal-entry-head" style="justify-content:space-between;">
           <div>
             <strong>{{ item.review_date }}</strong>
@@ -299,9 +303,24 @@
         </div>
         <div class="muted-copy">Regime/Bias: {{ item.market_regime || '-' }} / {{ item.daily_bias || '-' }} · Session {{ item.session || '-' }} · Condition {{ item.market_condition || '-' }}</div>
         <div class="muted-copy">Scores: conviction {{ item.confidence_score ?? '-' }} · discipline {{ item.discipline_score ?? '-' }} · emotion {{ item.emotional_control_score ?? '-' }}</div>
-        <div class="muted-copy">Trades: {{ (item.related_trade_groups_display || []).map((t) => `${t.symbol}(${t.realized_pnl ?? '-'})`).join(', ') || '-' }}</div>
-        <div class="muted-copy">Mistake tags: {{ (item.mistake_tags_display || []).map((t) => t.name).join(', ') || '-' }} · Images {{ item.images?.length || 0 }}</div>
-        <div class="review-item" style="margin-top:8px;">{{ item.market_summary || item.lessons || '-' }}</div>
+        <div class="muted-copy">Day PnL: {{ dailyPnl(item) }} · Trades: {{ (item.related_trade_groups_display || []).length }} · Images {{ item.images?.length || 0 }}</div>
+        <div class="chip-wrap" style="margin-top:6px;">
+          <span class="badge">Setup: {{ setupTagsFromDay(item).join(', ') || '-' }}</span>
+          <span class="badge">Execution tags: {{ mistakeNames(item).join(', ') || '-' }}</span>
+        </div>
+        <div class="review-item" style="margin-top:8px;"><strong>✔ 做对了：</strong>{{ item.market_summary || '-' }}</div>
+        <div class="review-item"><strong>❌ 错在哪：</strong>{{ item.biggest_mistake || '-' }}</div>
+        <div class="review-item"><strong>→ 明天改什么：</strong>{{ item.next_day_plan || '-' }}</div>
+        <div class="filter-action-row" style="margin-top:8px;">
+          <button class="secondary small-btn" @click="toggleTimelineTrades(item.review_date)">{{ expandedTimelineDates.includes(item.review_date) ? 'Hide Trades' : 'Show Trades' }}</button>
+          <span class="muted-copy" v-if="timelineLoadingDate === item.review_date">Loading trade details...</span>
+        </div>
+        <div v-if="expandedTimelineDates.includes(item.review_date)" class="accordion-body" style="padding-top:8px;">
+          <div v-if="!(timelineTradeDetailsByDate[item.review_date] || []).length" class="empty-row">No closed trades for this date.</div>
+          <div v-for="card in (timelineTradeDetailsByDate[item.review_date] || [])" :key="`tl-${item.review_date}-${card.trade_group_id}`" class="review-item">
+            {{ card.symbol }} · PnL {{ card.realized_pnl }} · Exec {{ card.executions_count }} · Hold {{ card.hold_minutes ?? '-' }}m · EntryQ {{ card.trade_review?.entry_quality ?? '-' }} · ExitQ {{ card.trade_review?.exit_quality ?? '-' }} · RiskQ {{ card.trade_review?.risk_management ?? '-' }} · R {{ card.trade_review?.realized_r ?? '-' }}
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -351,6 +370,13 @@ const positionSectionRef = ref(null)
 const dailyTimeline = ref([])
 const timelineDateFrom = ref('')
 const timelineDateTo = ref('')
+const timelineStrategyQuery = ref('')
+const timelineSessionFilter = ref('')
+const timelineLossOnly = ref(false)
+const timelineLowEmotionOnly = ref(false)
+const expandedTimelineDates = ref([])
+const timelineTradeDetailsByDate = ref({})
+const timelineLoadingDate = ref('')
 const pretradeDate = ref(new Date().toISOString().slice(0, 10))
 const pretradeForm = ref({ id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' })
 const watchlistText = ref('')
@@ -441,6 +467,17 @@ const holdingScatterSeries = computed(() => [
   { name: 'Holding Minutes', data: (analytics.value.holding_vs_pnl || []).map((p) => p.holding_minutes) },
   { name: 'PnL', data: (analytics.value.holding_vs_pnl || []).map((p) => p.pnl) },
 ])
+
+const filteredTimeline = computed(() => {
+  return (dailyTimeline.value || []).filter((item) => {
+    const strategyOk = !timelineStrategyQuery.value || (item.strategy || '').toLowerCase().includes(timelineStrategyQuery.value.toLowerCase())
+    const sessionOk = !timelineSessionFilter.value || (item.session || '') === timelineSessionFilter.value
+    const pnl = dailyPnl(item)
+    const lossOk = !timelineLossOnly.value || pnl < 0
+    const emotionOk = !timelineLowEmotionOnly.value || ((item.emotional_control_score ?? 999) <= 4)
+    return strategyOk && sessionOk && lossOk && emotionOk
+  })
+})
 
 function toggleCard(id) { expandedCards.value = expandedCards.value.includes(id) ? expandedCards.value.filter((v) => v !== id) : [...expandedCards.value, id] }
 function togglePosition(id) { expandedPositions.value = expandedPositions.value.includes(id) ? expandedPositions.value.filter((v) => v !== id) : [...expandedPositions.value, id] }
@@ -553,6 +590,36 @@ async function loadTimeline() {
   if (timelineDateTo.value) params.date_to = timelineDateTo.value
   const timelineRes = await fetchDailyReviews(params)
   dailyTimeline.value = timelineRes.data?.results || []
+}
+
+function dailyPnl(item) {
+  return (item.related_trade_groups_display || []).reduce((sum, t) => sum + Number(t.realized_pnl || 0), 0)
+}
+
+function mistakeNames(item) {
+  const ids = item.mistake_tags || []
+  return ids.map((id) => (mistakeTags.value || []).find((t) => t.id === id)?.name).filter(Boolean)
+}
+
+function setupTagsFromDay(item) {
+  const cards = timelineTradeDetailsByDate.value[item.review_date] || []
+  return Array.from(new Set(cards.map((card) => card.setup_name).filter(Boolean)))
+}
+
+async function toggleTimelineTrades(reviewDate) {
+  if (expandedTimelineDates.value.includes(reviewDate)) {
+    expandedTimelineDates.value = expandedTimelineDates.value.filter((d) => d !== reviewDate)
+    return
+  }
+  expandedTimelineDates.value = [...expandedTimelineDates.value, reviewDate]
+  if (timelineTradeDetailsByDate.value[reviewDate]) return
+  timelineLoadingDate.value = reviewDate
+  try {
+    const res = await fetchReviewQueue(reviewDate)
+    timelineTradeDetailsByDate.value[reviewDate] = res.data?.closed_trades || []
+  } finally {
+    timelineLoadingDate.value = ''
+  }
 }
 
 async function openTimelineTab() {
