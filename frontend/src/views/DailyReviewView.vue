@@ -44,6 +44,12 @@
                 <span class="metric-with-tip">Shots {{ card.screenshots_count }}<span class="metric-tip">Shots = 该笔复盘上传的截图数量。</span></span>
               </div>
               <div class="muted-copy">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }} · Mistakes: {{ (card.mistake_tags || []).join(', ') || '-' }}</div>
+              <div class="muted-copy">Plan vs Exec: entry {{ card.planned_entry ?? '-' }} → {{ card.actual_entry ?? '-' }} · stop {{ card.planned_stop ?? '-' }} · target {{ card.planned_target ?? '-' }}</div>
+              <div class="chip-wrap">
+                <span v-if="card.late_entry" class="badge badge-loss">Late entry</span>
+                <span v-if="card.broke_stop_rule" class="badge badge-loss">Broke stop rule</span>
+                <span class="badge">Setup match: {{ card.setup_match == null ? '-' : (card.setup_match ? 'Yes' : 'No') }}</span>
+              </div>
               <div class="muted-copy">Missing: {{ (card.missing_items || []).join(' / ') || 'none' }}</div>
             </div>
             <div class="trade-review-progress">
@@ -132,6 +138,7 @@
         <label :title="fieldHint('conviction')"><span>Conviction today (1-10)</span><input type="number" min="1" max="10" v-model.number="form.confidence_score" /></label>
         <label :title="fieldHint('discipline')"><span>Discipline (1-10)</span><input type="number" min="1" max="10" v-model.number="form.discipline_score" /></label>
         <label :title="fieldHint('emotional_control')"><span>Emotional control (1-10)</span><input type="number" min="1" max="10" v-model.number="form.emotional_control_score" /></label>
+        <label><span>Focus (1-5)</span><input type="number" min="1" max="5" v-model.number="form.focus_score" /></label>
         <label :title="fieldHint('max_daily_loss')"><span>Max daily loss respected</span><select v-model="maxLossSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
       </div>
 
@@ -174,6 +181,9 @@
         <div v-if="expandedPositions.includes(item.trade_group_id)" class="accordion-body">
           <div class="journal-form-grid">
             <label :title="fieldHint('thesis_status')"><span>Thesis status</span><select v-model="positionForms[item.trade_group_id].status"><option value="open">still valid</option><option value="reduced">weakened</option><option value="closed">invalid</option></select></label>
+            <label><span>Checkpoint Time</span><input type="datetime-local" v-model="positionForms[item.trade_group_id].checkpoint_time" /></label>
+            <label><span>Emotion (1-10)</span><input type="number" min="1" max="10" v-model.number="positionForms[item.trade_group_id].emotion_level" /></label>
+            <label><span>Action bias</span><select v-model="positionForms[item.trade_group_id].action_bias"><option value="hold">hold</option><option value="reduce">reduce</option><option value="take_profit">take_profit</option><option value="stop_out">stop_out</option></select></label>
           </div>
           <label :title="fieldHint('hold_overnight')"><span>Why hold overnight</span><textarea v-model="positionForms[item.trade_group_id].carry_reason" rows="2"></textarea></label>
           <label :title="fieldHint('risk_tomorrow')"><span>Risk tomorrow</span><textarea v-model="positionForms[item.trade_group_id].gap_risk_note" rows="2"></textarea></label>
@@ -415,7 +425,7 @@ const compareDimension = ref('by_strategy')
 const compareLeftKey = ref('')
 const compareRightKey = ref('')
 
-const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
+const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
 const completionRate = computed(() => {
   const total = (queue.value.summary.closed_trade_count || 0) + (queue.value.summary.open_position_count || 0) + 1
@@ -557,8 +567,11 @@ function hydratePositionForms(positions) {
       trade_group: item.trade_group_id,
       review_date: queueDate.value,
       status: 'open',
+      checkpoint_time: `${queueDate.value}T09:30`,
       carry_reason: '',
       gap_risk_note: '',
+      emotion_level: null,
+      action_bias: 'hold',
       next_session_plan: '',
     }
   })
@@ -567,7 +580,7 @@ function hydratePositionForms(positions) {
 
 function hydrateDailyReview(dailyReview) {
   if (!dailyReview) {
-    form.value = { review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id), session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] }
+    form.value = { review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id), session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] }
     maxLossSelection.value = ''
     return
   }
@@ -587,6 +600,7 @@ function hydrateDailyReview(dailyReview) {
     confidence_score: dailyReview.confidence_score,
     discipline_score: dailyReview.discipline_score,
     emotional_control_score: dailyReview.emotional_control_score,
+    focus_score: dailyReview.focus_score,
     max_daily_loss_respected: dailyReview.max_daily_loss_respected,
     mistake_tags: dailyReview.mistake_tags || [],
     image_urls: (dailyReview.images || []).map((item) => item.image_url),

@@ -160,6 +160,21 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
         trade_review_enabled = _trade_review_column_exists('would_take_again')
         for group in closed_trades:
             trade_review = getattr(group, 'trade_review', None) if trade_review_enabled else None
+            pretrade = PreTradePlan.objects.filter(plan_date=selected_date).first()
+            snapshot = None
+            if pretrade:
+                snapshot = pretrade.setup_snapshots.filter(Q(trade_group_id=group.id) | Q(symbol__iexact=group.symbol)).order_by('-updated_at').first()
+            actual_entry = group.avg_buy_price if group.direction == 'long' else group.avg_sell_price
+            actual_exit = group.avg_sell_price if group.direction == 'long' else group.avg_buy_price
+            late_entry = False
+            broke_stop_rule = False
+            setup_match = None
+            if snapshot and snapshot.planned_entry is not None and actual_entry is not None:
+                late_entry = (group.direction == 'long' and actual_entry > snapshot.planned_entry) or (group.direction == 'short' and actual_entry < snapshot.planned_entry)
+            if snapshot and snapshot.planned_stop is not None and actual_exit is not None:
+                broke_stop_rule = (group.direction == 'long' and actual_exit < snapshot.planned_stop) or (group.direction == 'short' and actual_exit > snapshot.planned_stop)
+            if snapshot and trade_review and trade_review.setup:
+                setup_match = trade_review.setup.name.lower().startswith(snapshot.setup_type.lower())
             executions_qs = RawIBKRExecution.objects.filter(symbol=group.symbol)
             if group.opened_at:
                 executions_qs = executions_qs.filter(executed_at__gte=group.opened_at)
@@ -178,6 +193,17 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
                 'hold_minutes': _hold_minutes(group),
                 'executions_count': executions_count,
                 'screenshots_count': len(trade_review.screenshots or []) if trade_review else 0,
+                'planned_entry': snapshot.planned_entry if snapshot else None,
+                'planned_stop': snapshot.planned_stop if snapshot else None,
+                'planned_target': snapshot.planned_target if snapshot else None,
+                'planned_direction': snapshot.direction if snapshot else '',
+                'planned_setup_type': snapshot.setup_type if snapshot else '',
+                'planned_timeframe': snapshot.timeframe if snapshot else '',
+                'actual_entry': actual_entry,
+                'actual_exit': actual_exit,
+                'late_entry': late_entry,
+                'broke_stop_rule': broke_stop_rule,
+                'setup_match': setup_match,
                 'review_completeness': _review_completeness(trade_review),
                 'has_review': bool(trade_review),
                 'setup_name': trade_review.setup.name if trade_review and trade_review.setup else '',
