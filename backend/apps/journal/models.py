@@ -205,6 +205,36 @@ class PreTradePlan(models.Model):
 
 
 class SetupSnapshot(models.Model):
+    DIRECTION_CHOICES = [
+        ('long', 'Long'),
+        ('short', 'Short'),
+    ]
+    SETUP_TYPE_CHOICES = [
+        ('breakout', 'Breakout'),
+        ('pullback', 'Pullback'),
+        ('reversal', 'Reversal'),
+        ('range', 'Range'),
+    ]
+    TIMEFRAME_CHOICES = [
+        ('1m', '1m'),
+        ('5m', '5m'),
+        ('15m', '15m'),
+        ('1h', '1h'),
+        ('1d', '1d'),
+    ]
+    TRIGGER_TYPE_CHOICES = [
+        ('break_premarket_high', 'Break above premarket high'),
+        ('volume_spike', 'Volume spike'),
+        ('vwap_reclaim', 'VWAP reclaim'),
+        ('custom', 'Custom'),
+    ]
+    INVALIDATION_TYPE_CHOICES = [
+        ('lose_vwap', 'Lose VWAP'),
+        ('fail_breakout_2m', 'Fail breakout within 2min'),
+        ('break_structure', 'Break structure'),
+        ('custom', 'Custom'),
+    ]
+
     pretrade_plan = models.ForeignKey(PreTradePlan, on_delete=models.CASCADE, related_name='setup_snapshots')
     trade_group = models.OneToOneField(
         'trades.TradeGroup',
@@ -215,8 +245,14 @@ class SetupSnapshot(models.Model):
     )
     symbol = models.CharField(max_length=32)
     strategy = models.CharField(max_length=128, blank=True, default='')
+    direction = models.CharField(max_length=8, choices=DIRECTION_CHOICES, default='long')
+    setup_type = models.CharField(max_length=16, choices=SETUP_TYPE_CHOICES, default='breakout')
+    timeframe = models.CharField(max_length=8, choices=TIMEFRAME_CHOICES, default='5m')
+    confidence_score = models.PositiveSmallIntegerField(null=True, blank=True)
     setup = models.ForeignKey(SetupTag, on_delete=models.SET_NULL, null=True, blank=True, related_name='setup_snapshots')
+    trigger_type = models.CharField(max_length=32, choices=TRIGGER_TYPE_CHOICES, default='custom')
     trigger_condition = models.TextField(blank=True, default='')
+    invalidation_type = models.CharField(max_length=32, choices=INVALIDATION_TYPE_CHOICES, default='custom')
     invalidation = models.TextField(blank=True, default='')
     planned_entry = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     planned_stop = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)

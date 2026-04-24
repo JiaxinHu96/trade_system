@@ -25,7 +25,8 @@
         <div class="stat-pill"><div class="stat-label">Open Positions</div><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Daily Review</div><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
         <div class="stat-pill"><div class="stat-label">Completion</div><div class="stat-value medium">{{ completionRate }}%</div></div>
-        <button @click="focusFirstPending" class="secondary">Start Review</button>
+        <button @click="focusFirstPending" class="secondary" :disabled="!queuePretradeReady">Start Review</button>
+        <div class="muted-copy" v-if="!queuePretradeReady">{{ queuePretradeMessage }}</div>
       </div>
     </section>
 
@@ -190,11 +191,21 @@
         <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
         <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="pretradeForm.market_regime" /></label>
         <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
-        <label><span>Risk Budget (R)</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
+        <label><span>Risk Budget (R) *</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
       </div>
       <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
       <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
-      <label><span>Checklist JSON</span><textarea v-model="checklistText" rows="2"></textarea></label>
+      <div>
+        <span>Checklist</span>
+        <div class="chip-wrap" style="margin-top:6px;">
+          <label><input type="checkbox" v-model="pretradeChecklist.market_trending" /> Market trending</label>
+          <label><input type="checkbox" v-model="pretradeChecklist.volume_above_average" /> Volume above average</label>
+          <label><input type="checkbox" v-model="pretradeChecklist.no_major_news_risk" /> No major news risk</label>
+          <label><input type="checkbox" v-model="pretradeChecklist.clean_structure" /> Clean structure</label>
+        </div>
+      </div>
+      <div class="muted-copy">Risk used today: {{ usedRiskR.toFixed(2) }}R · Remaining: {{ remainingRiskR.toFixed(2) }}R <span v-if="remainingRiskR < 0" class="save-error"> (Over budget)</span></div>
+      <div class="save-error" v-if="pretradeError">{{ pretradeError }}</div>
       <div class="filter-action-row">
         <button @click="savePretrade" :disabled="savingPretrade">{{ savingPretrade ? 'Saving...' : 'Save Pre-Trade Plan' }}</button>
       </div>
@@ -202,18 +213,27 @@
       <div class="section-title" style="margin-top:14px;">Setup Snapshots</div>
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
         <div class="journal-form-grid trade-review-form-grid">
-          <label><span>Symbol</span><input v-model="row.symbol" /></label>
-          <label><span>Strategy</span><input v-model="row.strategy" /></label>
+          <label><span>Symbol *</span><input v-model="row.symbol" /></label>
+          <label><span>Strategy *</span><input v-model="row.strategy" /></label>
+          <label><span>Direction *</span><select v-model="row.direction"><option value="long">long</option><option value="short">short</option></select></label>
+          <label><span>Setup Type *</span><select v-model="row.setup_type"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
+          <label><span>Timeframe *</span><select v-model="row.timeframe"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
+          <label><span>Confidence (1-10)</span><input type="number" min="1" max="10" v-model.number="row.confidence_score" /></label>
           <label><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
           <label><span>Checklist passed</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
         </div>
         <div class="journal-form-grid workspace-field-grid">
-          <label><span>Planned Entry</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
-          <label><span>Planned Stop</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
-          <label><span>Planned Target</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
+          <label><span>Planned Entry *</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
+          <label><span>Planned Stop *</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
+          <label><span>Planned Target *</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
+        </div>
+        <div class="journal-form-grid workspace-field-grid">
+          <label><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
+          <label><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
         </div>
         <label><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
         <label><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
+        <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
         <div class="filter-action-row">
           <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
         </div>
@@ -380,10 +400,14 @@ const timelineLoadingDate = ref('')
 const pretradeDate = ref(new Date().toISOString().slice(0, 10))
 const pretradeForm = ref({ id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' })
 const watchlistText = ref('')
-const checklistText = ref('{}')
+const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
 const savingPretrade = ref(false)
 const savingSnapshotId = ref(null)
+const pretradeError = ref('')
+const snapshotErrors = ref({})
+const queuePretradeReady = ref(true)
+const queuePretradeMessage = ref('')
 const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [] })
 const loadingAnalytics = ref(false)
 const analyticsError = ref('')
@@ -582,6 +606,7 @@ async function loadQueue() {
   hydrateCardForms(queue.value.closed_trades || [])
   hydratePositionForms(queue.value.open_positions || [])
   hydrateDailyReview(queue.value.daily_review)
+  await loadQueuePretradeStatus()
 }
 
 async function loadTimeline() {
@@ -672,8 +697,14 @@ function buildLocalSnapshot(item = {}) {
     trade_group: item.trade_group || null,
     symbol: item.symbol || '',
     strategy: item.strategy || '',
+    direction: item.direction || 'long',
+    setup_type: item.setup_type || 'breakout',
+    timeframe: item.timeframe || '5m',
+    confidence_score: item.confidence_score,
     setup: item.setup || null,
+    trigger_type: item.trigger_type || 'custom',
     trigger_condition: item.trigger_condition || '',
+    invalidation_type: item.invalidation_type || 'custom',
     invalidation: item.invalidation || '',
     planned_entry: item.planned_entry,
     planned_stop: item.planned_stop,
@@ -689,13 +720,13 @@ async function loadPretrade() {
   if (existing) {
     pretradeForm.value = { ...existing }
     watchlistText.value = (existing.watchlist || []).join(', ')
-    checklistText.value = JSON.stringify(existing.pre_trade_checklist || {}, null, 2)
+    pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false, ...(existing.pre_trade_checklist || {}) }
     const snaps = await fetchSetupSnapshots({ pretrade_plan: existing.id, page_size: 50 })
     snapshotForms.value = (snaps.data?.results || snaps.data || []).map((item) => buildLocalSnapshot(item))
   } else {
     pretradeForm.value = { id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' }
     watchlistText.value = ''
-    checklistText.value = '{}'
+    pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false }
     snapshotForms.value = [buildLocalSnapshot()]
   }
 }
@@ -703,13 +734,24 @@ async function loadPretrade() {
 async function savePretrade() {
   savingPretrade.value = true
   try {
-    let parsedChecklist = {}
-    try { parsedChecklist = JSON.parse(checklistText.value || '{}') } catch { parsedChecklist = {} }
+    pretradeError.value = ''
+    if (!pretradeForm.value.market_regime) {
+      pretradeError.value = 'Market regime is required.'
+      return
+    }
+    if (!(Number(pretradeForm.value.risk_budget_r) > 0)) {
+      pretradeError.value = 'Risk budget (R) must be greater than 0.'
+      return
+    }
+    if (!snapshotForms.value.length) {
+      pretradeError.value = 'At least 1 setup snapshot is required.'
+      return
+    }
     const payload = {
       ...pretradeForm.value,
       plan_date: pretradeDate.value,
       watchlist: watchlistText.value.split(',').map((v) => v.trim()).filter(Boolean),
-      pre_trade_checklist: parsedChecklist,
+      pre_trade_checklist: { ...pretradeChecklist.value },
     }
     const res = pretradeForm.value.id ? await updatePretradePlan(pretradeForm.value.id, payload) : await savePretradePlan(payload)
     pretradeForm.value = res.data
@@ -725,6 +767,11 @@ function addSnapshotRow() {
 
 async function saveSnapshot(row) {
   if (!pretradeForm.value.id) await savePretrade()
+  snapshotErrors.value[row.local_id] = ''
+  if (!row.strategy || row.planned_entry == null || row.planned_stop == null || row.planned_target == null) {
+    snapshotErrors.value[row.local_id] = 'Strategy, planned entry, stop, target are required.'
+    return
+  }
   savingSnapshotId.value = row.local_id
   try {
     const payload = { ...row, pretrade_plan: pretradeForm.value.id }
@@ -734,6 +781,43 @@ async function saveSnapshot(row) {
   } finally {
     savingSnapshotId.value = null
   }
+}
+
+const usedRiskR = computed(() => {
+  const cards = queue.value.closed_trades || []
+  return cards.reduce((sum, c) => {
+    const r = Number(c.trade_review?.realized_r)
+    if (!Number.isFinite(r)) return sum
+    return sum + (r < 0 ? Math.abs(r) : 0)
+  }, 0)
+})
+
+const remainingRiskR = computed(() => {
+  const budget = Number(pretradeForm.value.risk_budget_r || 0)
+  return budget - usedRiskR.value
+})
+
+function snapshotIsComplete(row) {
+  return Boolean(row.strategy && row.planned_entry != null && row.planned_stop != null && row.planned_target != null)
+}
+
+async function loadQueuePretradeStatus() {
+  const res = await fetchPretradePlans({ date: queueDate.value, page_size: 1 })
+  const plan = (res.data?.results || res.data || [])[0]
+  if (!plan || !plan.market_regime || !(Number(plan.risk_budget_r) > 0)) {
+    queuePretradeReady.value = false
+    queuePretradeMessage.value = 'Complete Pre-Trade Plan (market regime + risk budget + snapshots) before Start Review.'
+    return
+  }
+  const snaps = await fetchSetupSnapshots({ pretrade_plan: plan.id, page_size: 50 })
+  const rows = (snaps.data?.results || snaps.data || [])
+  if (!rows.length || !rows.every(snapshotIsComplete)) {
+    queuePretradeReady.value = false
+    queuePretradeMessage.value = 'At least one complete setup snapshot is required before Start Review.'
+    return
+  }
+  queuePretradeReady.value = true
+  queuePretradeMessage.value = ''
 }
 
 async function loadAnalytics() {
