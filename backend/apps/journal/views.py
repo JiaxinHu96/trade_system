@@ -328,31 +328,68 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
         by_strategy = {}
         by_session = {}
         by_symbol = {}
+        equity_points = []
+        holding_vs_pnl = []
+        r_values = []
+        total_profit = 0.0
+        total_loss_abs = 0.0
 
-        for item in qs:
+        ordered = sorted(
+            list(qs),
+            key=lambda x: (
+                x.trade_group.closed_at if x.trade_group and x.trade_group.closed_at else timezone.now(),
+                x.id,
+            ),
+        )
+
+        for item in ordered:
             trade_group = item.trade_group
             realized_r = float(item.realized_r) if item.realized_r is not None else None
+            realized_pnl = float(trade_group.realized_pnl) if trade_group and trade_group.realized_pnl is not None else 0.0
             hold_minutes = None
             if trade_group and trade_group.opened_at and trade_group.closed_at:
                 hold_minutes = (trade_group.closed_at - trade_group.opened_at).total_seconds() / 60
             win = bool(realized_r is not None and realized_r > 0)
+            if realized_pnl >= 0:
+                total_profit += realized_pnl
+            else:
+                total_loss_abs += abs(realized_pnl)
+            if realized_r is not None:
+                r_values.append(realized_r)
+            if hold_minutes is not None:
+                holding_vs_pnl.append({
+                    'symbol': trade_group.symbol if trade_group else 'unknown',
+                    'holding_minutes': round(hold_minutes, 2),
+                    'pnl': round(realized_pnl, 2),
+                })
 
             def _accumulate(bucket, key):
                 if not key:
                     return
-                row = bucket.setdefault(key, {'count': 0, 'wins': 0, 'r_total': 0.0, 'r_count': 0, 'hold_total': 0.0, 'hold_count': 0})
+                row = bucket.setdefault(key, {'count': 0, 'wins': 0, 'losses': 0, 'r_total': 0.0, 'r_count': 0, 'hold_total': 0.0, 'hold_count': 0, 'pnl_total': 0.0, 'profit_sum': 0.0, 'loss_sum_abs': 0.0})
                 row['count'] += 1
                 row['wins'] += 1 if win else 0
+                row['losses'] += 0 if win else 1
                 if realized_r is not None:
                     row['r_total'] += realized_r
                     row['r_count'] += 1
                 if hold_minutes is not None:
                     row['hold_total'] += hold_minutes
                     row['hold_count'] += 1
+                row['pnl_total'] += realized_pnl
+                if realized_pnl >= 0:
+                    row['profit_sum'] += realized_pnl
+                else:
+                    row['loss_sum_abs'] += abs(realized_pnl)
 
             _accumulate(by_strategy, item.strategy or (item.setup.name if item.setup else 'Unknown'))
             _accumulate(by_session, item.session or 'unknown')
             _accumulate(by_symbol, trade_group.symbol if trade_group else 'unknown')
+            if trade_group and trade_group.closed_at:
+                equity_points.append({
+                    'date': trade_group.closed_at.date().isoformat(),
+                    'pnl': realized_pnl,
+                })
 
         def _finalize(bucket):
             rows = []
@@ -362,21 +399,51 @@ class TradeReviewViewSet(viewsets.ModelViewSet):
                 win_rate = (val['wins'] / count) * 100
                 expectancy = avg_r
                 avg_holding_minutes = (val['hold_total'] / val['hold_count']) if val['hold_count'] else None
+                profit_factor = (val['profit_sum'] / val['loss_sum_abs']) if val['loss_sum_abs'] else None
                 rows.append({
                     'key': key,
                     'trades': val['count'],
+                    'losses': val['losses'],
                     'win_rate': round(win_rate, 2),
+                    'total_pnl': round(val['pnl_total'], 2),
                     'avg_r': round(avg_r, 4) if avg_r is not None else None,
                     'expectancy': round(expectancy, 4) if expectancy is not None else None,
+                    'profit_factor': round(profit_factor, 4) if profit_factor is not None else None,
                     'avg_holding_minutes': round(avg_holding_minutes, 2) if avg_holding_minutes is not None else None,
                 })
             rows.sort(key=lambda x: x['trades'], reverse=True)
             return rows
 
+        cumulative = 0.0
+        max_peak = 0.0
+        max_drawdown = 0.0
+        equity_curve = []
+        for point in equity_points:
+            cumulative += point['pnl']
+            max_peak = max(max_peak, cumulative)
+            drawdown = cumulative - max_peak
+            max_drawdown = min(max_drawdown, drawdown)
+            equity_curve.append({'date': point['date'], 'equity': round(cumulative, 2)})
+
+        wins = len([x for x in r_values if x > 0])
+        losses = len([x for x in r_values if x <= 0])
+
         return Response({
             'by_strategy': _finalize(by_strategy),
             'by_session': _finalize(by_session),
             'by_symbol': _finalize(by_symbol),
+            'summary': {
+                'trades': len(ordered),
+                'wins': wins,
+                'losses': losses,
+                'total_pnl': round(sum([p['pnl'] for p in equity_points]), 2) if equity_points else 0.0,
+                'expectancy': round((sum(r_values) / len(r_values)), 4) if r_values else None,
+                'profit_factor': round((total_profit / total_loss_abs), 4) if total_loss_abs else None,
+                'max_drawdown': round(max_drawdown, 2),
+            },
+            'equity_curve': equity_curve,
+            'r_distribution': [round(v, 4) for v in r_values],
+            'holding_vs_pnl': holding_vs_pnl,
         })
 
 

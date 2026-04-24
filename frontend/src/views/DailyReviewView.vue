@@ -231,24 +231,53 @@
         No analytics data yet. Save Trade Reviews with `realized_r` / `session` / `strategy` first.
       </div>
       <div class="journal-text-grid" v-else>
+        <div class="journal-entry-card">
+          <div class="section-title minor">Portfolio Summary</div>
+          <div class="muted-copy">Trades (N): {{ analytics.summary?.trades ?? 0 }} · Wins {{ analytics.summary?.wins ?? 0 }} · Losses {{ analytics.summary?.losses ?? 0 }}</div>
+          <div class="muted-copy">Total PnL: {{ analytics.summary?.total_pnl ?? 0 }} · Expectancy: {{ analytics.summary?.expectancy ?? '-' }}</div>
+          <div class="muted-copy">Profit Factor: {{ analytics.summary?.profit_factor ?? '-' }} · Max Drawdown: {{ analytics.summary?.max_drawdown ?? 0 }}</div>
+        </div>
+        <div class="journal-entry-card">
+          <div class="section-title minor">Compare</div>
+          <div class="journal-form-grid workspace-field-grid">
+            <label><span>Dimension</span>
+              <select v-model="compareDimension">
+                <option v-for="item in analyticsDimensionOptions" :key="item.key" :value="item.key">{{ item.label }}</option>
+              </select>
+            </label>
+            <label><span>Left</span>
+              <select v-model="compareLeftKey"><option v-for="key in comparisonOptions" :key="`l-${key}`" :value="key">{{ key }}</option></select>
+            </label>
+            <label><span>Right</span>
+              <select v-model="compareRightKey"><option v-for="key in comparisonOptions" :key="`r-${key}`" :value="key">{{ key }}</option></select>
+            </label>
+          </div>
+          <div class="muted-copy" v-if="leftCompareRow">{{ compareLeftKey }} → N {{ leftCompareRow.trades }} · Win {{ leftCompareRow.win_rate }}% · PnL {{ leftCompareRow.total_pnl }} · Exp {{ leftCompareRow.expectancy }} · PF {{ leftCompareRow.profit_factor ?? '-' }}</div>
+          <div class="muted-copy" v-if="rightCompareRow">{{ compareRightKey }} → N {{ rightCompareRow.trades }} · Win {{ rightCompareRow.win_rate }}% · PnL {{ rightCompareRow.total_pnl }} · Exp {{ rightCompareRow.expectancy }} · PF {{ rightCompareRow.profit_factor ?? '-' }}</div>
+        </div>
         <div>
           <div class="section-title minor">By Strategy</div>
           <div v-for="row in analytics.by_strategy" :key="`s-${row.key}`" class="review-item">
-            {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+            {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
           </div>
         </div>
         <div>
           <div class="section-title minor">By Session</div>
           <div v-for="row in analytics.by_session" :key="`ss-${row.key}`" class="review-item">
-            {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+            {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
           </div>
         </div>
       </div>
       <div>
         <div class="section-title minor">By Symbol</div>
         <div v-for="row in analytics.by_symbol" :key="`sym-${row.key}`" class="review-item">
-          {{ row.key }} · Win {{ row.win_rate }}% · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+          {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
         </div>
+      </div>
+      <div class="tv-dashboard-chart-grid tv-dashboard-chart-grid-triple" style="margin-top:12px;">
+        <TradesVizChart title="Equity Curve" subtitle="Cumulative realized PnL" :categories="equityCategories" :series="equitySeries" default-type="line" :height="180" />
+        <TradesVizChart title="R Distribution" subtitle="Per-trade R multiples" :categories="rDistributionCategories" :series="rDistributionSeries" default-type="bar" :height="180" />
+        <TradesVizChart title="Holding Time vs PnL" subtitle="Pattern view (proxy chart)" :categories="holdingScatterCategories" :series="holdingScatterSeries" default-type="line" :height="180" />
       </div>
     </section>
 
@@ -280,6 +309,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
+import TradesVizChart from '../components/TradesVizChart.vue'
 import {
   createDailyReview,
   fetchDailyReviews,
@@ -331,6 +361,9 @@ const savingSnapshotId = ref(null)
 const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [] })
 const loadingAnalytics = ref(false)
 const analyticsError = ref('')
+const compareDimension = ref('by_strategy')
+const compareLeftKey = ref('')
+const compareRightKey = ref('')
 
 const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
@@ -388,6 +421,26 @@ const FIELD_HINTS = {
 function fieldHint(key) {
   return FIELD_HINTS[key] || ''
 }
+
+const analyticsDimensionOptions = computed(() => ([
+  { key: 'by_strategy', label: 'Strategy' },
+  { key: 'by_session', label: 'Session' },
+  { key: 'by_symbol', label: 'Symbol' },
+]))
+
+const analyticsRowsForDimension = computed(() => analytics.value?.[compareDimension.value] || [])
+const comparisonOptions = computed(() => analyticsRowsForDimension.value.map((row) => row.key))
+const leftCompareRow = computed(() => analyticsRowsForDimension.value.find((row) => row.key === compareLeftKey.value) || null)
+const rightCompareRow = computed(() => analyticsRowsForDimension.value.find((row) => row.key === compareRightKey.value) || null)
+const equityCategories = computed(() => (analytics.value.equity_curve || []).map((p) => p.date))
+const equitySeries = computed(() => [{ name: 'Equity', data: (analytics.value.equity_curve || []).map((p) => p.equity) }])
+const rDistributionCategories = computed(() => (analytics.value.r_distribution || []).map((_, idx) => `T${idx + 1}`))
+const rDistributionSeries = computed(() => [{ name: 'R Multiple', data: analytics.value.r_distribution || [] }])
+const holdingScatterCategories = computed(() => (analytics.value.holding_vs_pnl || []).map((_, idx) => `P${idx + 1}`))
+const holdingScatterSeries = computed(() => [
+  { name: 'Holding Minutes', data: (analytics.value.holding_vs_pnl || []).map((p) => p.holding_minutes) },
+  { name: 'PnL', data: (analytics.value.holding_vs_pnl || []).map((p) => p.pnl) },
+])
 
 function toggleCard(id) { expandedCards.value = expandedCards.value.includes(id) ? expandedCards.value.filter((v) => v !== id) : [...expandedCards.value, id] }
 function togglePosition(id) { expandedPositions.value = expandedPositions.value.includes(id) ? expandedPositions.value.filter((v) => v !== id) : [...expandedPositions.value, id] }
@@ -622,6 +675,9 @@ async function loadAnalytics() {
     analyticsError.value = ''
     const res = await fetchTradeReviewAnalyticsSummary()
     analytics.value = res.data || { by_strategy: [], by_session: [], by_symbol: [] }
+    const keys = (analytics.value[compareDimension.value] || []).map((row) => row.key)
+    compareLeftKey.value = keys[0] || ''
+    compareRightKey.value = keys[1] || keys[0] || ''
   } catch (error) {
     analyticsError.value = error?.response?.data?.detail || 'Failed to load analytics.'
   } finally {
