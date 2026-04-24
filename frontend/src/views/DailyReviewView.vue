@@ -210,44 +210,50 @@
 
     <section v-else-if="journalTab === 'pretrade'" class="card">
       <div class="section-title">Pre-Trade Plan / Setup Snapshot</div>
-      <div class="journal-form-grid workspace-field-grid">
-        <label :title="fieldHint('queue_date')"><span>Plan Date</span><input v-model="pretradeDate" type="date" @change="loadPretrade" @click="openDatePicker" @focus="openDatePicker" /></label>
-        <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
-        <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="pretradeForm.market_regime" /></label>
-        <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
-        <label><span>Risk Budget (R) *</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
-      </div>
-      <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
-      <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
-      <div>
-        <span>Checklist</span>
-        <div class="checklist-banner" :class="pretradeChecklistPassed ? 'status-good-block' : 'status-bad-block'">
-          Checklist Score: {{ checklistPassCount }}/{{ checklistTotal }} · {{ pretradeChecklistPassed ? 'Passed' : 'Not passed' }}
-        </div>
-        <div class="chip-wrap" style="margin-top:6px;">
-          <label><input type="checkbox" v-model="pretradeChecklist.market_trending" /> Market trending</label>
-          <label><input type="checkbox" v-model="pretradeChecklist.volume_above_average" /> Volume above average</label>
-          <label><input type="checkbox" v-model="pretradeChecklist.no_major_news_risk" /> No major news risk</label>
-          <label><input type="checkbox" v-model="pretradeChecklist.clean_structure" /> Clean structure</label>
+      <div class="pretrade-module-card">
+        <div class="section-title minor">① Market Context</div>
+        <div class="journal-form-grid workspace-field-grid">
+          <label :title="fieldHint('queue_date')"><span>Plan Date</span><input v-model="pretradeDate" type="date" @change="loadPretrade" @click="openDatePicker" @focus="openDatePicker" /></label>
+          <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
+          <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="pretradeForm.market_regime" /></label>
+          <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
+          <label><span>Risk Budget (R) *</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
         </div>
       </div>
-      <div class="risk-dashboard" :class="riskStatusClass">
-        <div><strong>Risk Dashboard</strong></div>
-        <div>🟢 Used: {{ usedRiskR.toFixed(2) }}R</div>
-        <div>🟡 Remaining: {{ remainingRiskR.toFixed(2) }}R</div>
-        <div>🔴 Max: {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R</div>
-        <div class="risk-progress">
-          <div class="risk-progress-fill" :style="{ width: `${usedRiskPct}%` }"></div>
+      <div class="pretrade-module-card">
+        <div class="section-title minor">② Strategy & Checklist</div>
+        <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
+        <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
+        <div>
+          <span>Checklist</span>
+          <div class="checklist-banner" :class="pretradeChecklistPassed ? 'status-good-block' : 'status-bad-block'">
+            Score: {{ checklistPassCount }}/{{ checklistTotal }} · {{ pretradeChecklistPassed ? '✅ PASSED' : '❌ NOT PASSED' }}
+          </div>
+          <div class="pretrade-checklist-grid">
+            <label :class="['checklist-item', pretradeChecklist.market_trending ? 'check-on' : 'check-off']"><span>{{ pretradeChecklist.market_trending ? '✓' : '✗' }}</span><input type="checkbox" v-model="pretradeChecklist.market_trending" /> Market trending</label>
+            <label :class="['checklist-item', pretradeChecklist.volume_above_average ? 'check-on' : 'check-off']"><span>{{ pretradeChecklist.volume_above_average ? '✓' : '✗' }}</span><input type="checkbox" v-model="pretradeChecklist.volume_above_average" /> Volume above average</label>
+            <label :class="['checklist-item', pretradeChecklist.no_major_news_risk ? 'check-on' : 'check-off']"><span>{{ pretradeChecklist.no_major_news_risk ? '✓' : '✗' }}</span><input type="checkbox" v-model="pretradeChecklist.no_major_news_risk" /> No major news risk</label>
+            <label :class="['checklist-item', pretradeChecklist.clean_structure ? 'check-on' : 'check-off']"><span>{{ pretradeChecklist.clean_structure ? '✓' : '✗' }}</span><input type="checkbox" v-model="pretradeChecklist.clean_structure" /> Clean structure</label>
+          </div>
         </div>
-        <div class="muted-copy">[{{ riskProgressBar }}] {{ usedRiskPct.toFixed(0) }}%</div>
-      </div>
-      <div v-if="riskLimitReached" class="save-error">Risk budget reached. New setup snapshots are blocked until budget is increased.</div>
-      <div class="save-error" v-if="pretradeError">{{ pretradeError }}</div>
-      <div class="filter-action-row">
-        <button @click="savePretrade" :disabled="savingPretrade">{{ savingPretrade ? 'Saving...' : 'Save Pre-Trade Plan' }}</button>
+        <div class="risk-dashboard" :class="riskStatusClass">
+          <div><strong>Risk Dashboard</strong></div>
+          <div>🟢 Used: {{ usedRiskR.toFixed(2) }}R</div>
+          <div>🟡 Remaining: {{ remainingRiskR.toFixed(2) }}R</div>
+          <div>🔴 Max: {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R</div>
+          <div class="risk-progress">
+            <div class="risk-progress-fill" :style="{ width: `${usedRiskPct}%` }"></div>
+          </div>
+          <div class="muted-copy">[{{ riskProgressBar }}] {{ usedRiskPct.toFixed(0) }}%</div>
+        </div>
+        <div v-if="riskLimitReached" class="save-error">Risk budget reached. New setup snapshots are blocked until budget is increased.</div>
+        <div class="save-error" v-if="pretradeError">{{ pretradeError }}</div>
+        <div class="filter-action-row">
+          <button @click="savePretrade" :disabled="savingPretrade">{{ savingPretrade ? 'Saving...' : 'Save Pre-Trade Plan' }}</button>
+        </div>
       </div>
 
-      <div class="section-title" style="margin-top:14px;">Setup Snapshots</div>
+      <div class="section-title" style="margin-top:14px;">③ Setup Snapshots</div>
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
         <div class="section-title minor">Basic</div>
         <div class="journal-form-grid workspace-field-grid">
@@ -1303,6 +1309,43 @@ onMounted(async () => {
 .workspace-field-grid label,
 .workspace-summary-grid label {
   gap: 6px;
+}
+
+.pretrade-module-card {
+  margin-top: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+  padding: 14px;
+}
+
+.pretrade-checklist-grid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px 10px;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.check-on {
+  background: #ecfdf5;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.check-off {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fca5a5;
 }
 
 .workspace-field-grid :deep(input),
