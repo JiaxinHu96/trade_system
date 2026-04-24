@@ -298,7 +298,7 @@
       <button class="secondary" @click="addSnapshotRow" :disabled="riskLimitReached">Add Snapshot</button>
     </section>
 
-    <section v-else-if="journalTab === 'analytics'" class="card">
+    <section v-else-if="journalTab === 'analytics'" class="card analytics-surface">
       <div class="section-title">Trade Review Analytics</div>
       <div class="filter-action-row" style="margin-top:0;">
         <button @click="loadAnalytics" :disabled="loadingAnalytics">{{ loadingAnalytics ? 'Loading...' : 'Refresh Analytics' }}</button>
@@ -337,7 +337,7 @@
           <div v-for="(line, idx) in analytics.insights || []" :key="`ins-${idx}`" class="review-item">👉 {{ line }}</div>
         </div>
 
-        <div class="journal-entry-card" style="margin-top:10px;">
+        <div class="journal-entry-card analytics-panel-card" style="margin-top:10px;">
           <div class="section-title minor">Strategy Edge Ranking</div>
           <div class="analytics-table-wrap">
             <table class="analytics-table">
@@ -404,22 +404,35 @@
         </div>
 
         <div class="journal-text-grid" style="margin-top:10px;">
-          <div>
+          <div class="journal-entry-card analytics-panel-card">
             <div class="section-title minor">By Strategy</div>
-            <div v-for="row in analytics.by_strategy" :key="`s-${row.key}`" class="review-item">
-              {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+            <div v-for="row in analytics.by_strategy" :key="`s-${row.key}`" class="analytics-stat-row">
+              <strong>{{ row.key }}</strong>
+              <span class="badge">N {{ row.trades }}</span>
+              <span class="badge">Win {{ row.win_rate }}%</span>
+              <span :class="['badge', row.total_pnl >= 0 ? 'badge-profit' : 'badge-loss']">PnL {{ row.total_pnl }}</span>
+              <span class="badge">AvgR {{ row.avg_r ?? '-' }}</span>
+              <span class="badge">Exp {{ row.expectancy ?? '-' }}</span>
             </div>
           </div>
-          <div>
+          <div class="journal-entry-card analytics-panel-card">
             <div class="section-title minor">By Session</div>
-            <div v-for="row in analytics.by_session" :key="`ss-${row.key}`" class="review-item">
-              {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+            <div v-for="row in analytics.by_session" :key="`ss-${row.key}`" class="analytics-stat-row">
+              <strong>{{ row.key }}</strong>
+              <span class="badge">N {{ row.trades }}</span>
+              <span class="badge">Win {{ row.win_rate }}%</span>
+              <span :class="['badge', row.total_pnl >= 0 ? 'badge-profit' : 'badge-loss']">PnL {{ row.total_pnl }}</span>
+              <span class="badge">Exp {{ row.expectancy ?? '-' }}</span>
             </div>
           </div>
-          <div>
+          <div class="journal-entry-card analytics-panel-card">
             <div class="section-title minor">By Symbol</div>
-            <div v-for="row in analytics.by_symbol" :key="`sym-${row.key}`" class="review-item">
-              {{ row.key }} · N {{ row.trades }} · Win {{ row.win_rate }}% · PnL {{ row.total_pnl }} · Avg R {{ row.avg_r ?? '-' }} · Exp {{ row.expectancy ?? '-' }} · PF {{ row.profit_factor ?? '-' }} · Hold {{ row.avg_holding_minutes ?? '-' }}m
+            <div v-for="row in analytics.by_symbol" :key="`sym-${row.key}`" class="analytics-stat-row">
+              <strong>{{ row.key }}</strong>
+              <span class="badge">N {{ row.trades }}</span>
+              <span class="badge">Win {{ row.win_rate }}%</span>
+              <span :class="['badge', row.total_pnl >= 0 ? 'badge-profit' : 'badge-loss']">PnL {{ row.total_pnl }}</span>
+              <span class="badge">Exp {{ row.expectancy ?? '-' }}</span>
             </div>
           </div>
         </div>
@@ -1487,6 +1500,15 @@ onMounted(async () => {
   gap: 10px;
 }
 
+.analytics-surface {
+  background: #f8fafc;
+}
+
+.analytics-panel-card {
+  border: 1px solid #dbe3f4;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
 .kpi-card {
   border: 1px solid #dbe3f4;
   border-radius: 10px;
@@ -1544,6 +1566,14 @@ onMounted(async () => {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.analytics-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
 }
 
 .timeline-day-card {
