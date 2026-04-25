@@ -29,7 +29,7 @@
         <div class="stat-pill"><div class="stat-label">Daily Review</div><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
         <div class="stat-pill"><div class="stat-label">Completion</div><div class="stat-value medium">{{ completionRate }}%</div></div>
         <button @click="focusFirstPending" class="secondary" :disabled="!queuePretradeReady">Start Review</button>
-        <div class="muted-copy" v-if="!queuePretradeReady">{{ queuePretradeMessage }}</div>
+        <div class="muted-copy summary-pretrade-note" v-if="!queuePretradeReady">{{ queuePretradeMessage }}</div>
       </div>
     </section>
 
@@ -220,7 +220,7 @@
         <div class="section-title minor">① Market Context</div>
         <div class="journal-form-grid workspace-field-grid">
           <label :title="fieldHint('queue_date')"><span>Plan Date</span><input v-model="pretradeDate" type="date" @change="loadPretrade" @click="openDatePicker" @focus="openDatePicker" /></label>
-          <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
+          <label :title="fieldHint('session_focus')"><span>Session (multi-select)</span><select v-model="pretradeSessions" multiple><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
           <label :title="fieldHint('market_regime')"><span>Market Regime <span class="required-asterisk">*</span></span><input v-model="pretradeForm.market_regime" :class="{ 'field-missing': pretradeSubmitAttempted && !pretradeForm.market_regime }" :placeholder="pretradeSubmitAttempted && !pretradeForm.market_regime ? 'Required field' : ''" /></label>
           <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
           <label :title="fieldHint('risk_budget_r')"><span>Risk Budget (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" :class="{ 'field-missing': pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) }" :placeholder="pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) ? 'Required field' : ''" /></label>
@@ -588,6 +588,7 @@ const timelineTradeDetailsByDate = ref({})
 const timelineLoadingDate = ref('')
 const pretradeDate = ref(new Date().toISOString().slice(0, 10))
 const pretradeForm = ref({ id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' })
+const pretradeSessions = ref(['premarket'])
 const watchlistText = ref('')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
@@ -1086,6 +1087,8 @@ async function loadPretrade() {
   const existing = (res.data?.results || res.data || [])[0]
   if (existing) {
     pretradeForm.value = { ...existing }
+    pretradeSessions.value = (existing.session || 'premarket').split(',').map((v) => v.trim()).filter(Boolean)
+    if (!pretradeSessions.value.length) pretradeSessions.value = ['premarket']
     watchlistText.value = (existing.watchlist || []).join(', ')
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false, ...(existing.pre_trade_checklist || {}) }
     const snaps = await fetchSetupSnapshots({ pretrade_plan: existing.id, page_size: 50 })
@@ -1093,6 +1096,7 @@ async function loadPretrade() {
     expandedSnapshotLogic.value = []
   } else {
     pretradeForm.value = { id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' }
+    pretradeSessions.value = ['premarket']
     watchlistText.value = ''
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false }
     snapshotForms.value = [buildLocalSnapshot()]
@@ -1129,6 +1133,7 @@ async function savePretrade(withConfirm = true) {
     }
     const payload = {
       ...pretradeForm.value,
+      session: (pretradeSessions.value || []).join(','),
       plan_date: pretradeDate.value,
       watchlist: watchlistText.value.split(',').map((v) => v.trim()).filter(Boolean),
       pre_trade_checklist: { ...pretradeChecklist.value },
@@ -1426,10 +1431,14 @@ onMounted(async () => {
   border: 1px solid #dbe3f4;
   border-radius: 10px;
   padding: 10px 12px;
-  min-height: 108px;
+  min-height: 82px;
   display: grid;
   align-content: start;
   gap: 6px;
+}
+
+.summary-pretrade-note {
+  white-space: nowrap;
 }
 
 .queue-date-pill {
