@@ -81,7 +81,7 @@
                   <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
                 </select>
               </label>
-              <label><span>Linked Snapshot</span>
+              <label :title="fieldHint('linked_snapshot')"><span>Linked Snapshot</span>
                 <select v-model.number="tradeReviewForms[card.trade_group_id].selected_snapshot">
                   <option :value="null">-</option>
                   <option v-for="opt in card.snapshot_options || []" :key="opt.id" :value="Number(opt.id)">
@@ -158,7 +158,7 @@
         <label :title="fieldHint('conviction')"><span>Conviction today (1-10)</span><input type="number" min="1" max="10" v-model.number="form.confidence_score" /></label>
         <label :title="fieldHint('discipline')"><span>Discipline (1-10)</span><input type="number" min="1" max="10" v-model.number="form.discipline_score" /></label>
         <label :title="fieldHint('emotional_control')"><span>Emotional control (1-10)</span><input type="number" min="1" max="10" v-model.number="form.emotional_control_score" /></label>
-        <label><span>Focus (1-5)</span><input type="number" min="1" max="5" v-model.number="form.focus_score" /></label>
+        <label :title="fieldHint('focus_score')"><span>Focus (1-5)</span><input type="number" min="1" max="5" v-model.number="form.focus_score" /></label>
         <label :title="fieldHint('max_daily_loss')"><span>Max daily loss respected</span><select v-model="maxLossSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
       </div>
 
@@ -201,9 +201,9 @@
         <div v-if="expandedPositions.includes(item.trade_group_id)" class="accordion-body">
           <div class="journal-form-grid">
             <label :title="fieldHint('thesis_status')"><span>Thesis status</span><select v-model="positionForms[item.trade_group_id].status"><option value="open">still valid</option><option value="reduced">weakened</option><option value="closed">invalid</option></select></label>
-            <label><span>Checkpoint Time</span><input type="datetime-local" v-model="positionForms[item.trade_group_id].checkpoint_time" /></label>
-            <label><span>Emotion (1-10)</span><input type="number" min="1" max="10" v-model.number="positionForms[item.trade_group_id].emotion_level" /></label>
-            <label><span>Action bias</span><select v-model="positionForms[item.trade_group_id].action_bias"><option value="hold">hold</option><option value="reduce">reduce</option><option value="take_profit">take_profit</option><option value="stop_out">stop_out</option></select></label>
+            <label :title="fieldHint('checkpoint_time')"><span>Checkpoint Time</span><input type="datetime-local" v-model="positionForms[item.trade_group_id].checkpoint_time" /></label>
+            <label :title="fieldHint('emotion_level')"><span>Emotion (1-10)</span><input type="number" min="1" max="10" v-model.number="positionForms[item.trade_group_id].emotion_level" /></label>
+            <label :title="fieldHint('action_bias')"><span>Action bias</span><select v-model="positionForms[item.trade_group_id].action_bias"><option value="hold">hold</option><option value="reduce">reduce</option><option value="take_profit">take_profit</option><option value="stop_out">stop_out</option></select></label>
           </div>
           <label :title="fieldHint('hold_overnight')"><span>Why hold overnight</span><textarea v-model="positionForms[item.trade_group_id].carry_reason" rows="2"></textarea></label>
           <label :title="fieldHint('risk_tomorrow')"><span>Risk tomorrow</span><textarea v-model="positionForms[item.trade_group_id].gap_risk_note" rows="2"></textarea></label>
@@ -223,7 +223,7 @@
           <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
           <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="pretradeForm.market_regime" /></label>
           <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
-          <label><span>Risk Budget (R) *</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
+          <label :title="fieldHint('risk_budget_r')"><span>Risk Budget (R) *</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
         </div>
       </div>
       <div class="pretrade-module-card">
@@ -263,24 +263,24 @@
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
         <div class="section-title minor">Basic</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label><span>Symbol *</span><input v-model="row.symbol" /></label>
-          <label><span>Strategy *</span><input v-model="row.strategy" /></label>
-          <label><span>Direction *</span><select v-model="row.direction"><option value="long">long</option><option value="short">short</option></select></label>
+          <label :title="fieldHint('snapshot_symbol')"><span>Symbol *</span><input v-model="row.symbol" /></label>
+          <label :title="fieldHint('snapshot_strategy')"><span>Strategy *</span><input v-model="row.strategy" /></label>
+          <label :title="fieldHint('snapshot_direction')"><span>Direction *</span><select v-model="row.direction"><option value="long">long</option><option value="short">short</option></select></label>
         </div>
         <div class="section-title minor">Setup</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label><span>Setup Type *</span><select v-model="row.setup_type"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
-          <label><span>Timeframe *</span><select v-model="row.timeframe"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
-          <label><span>Confidence (1-10)</span><input type="number" min="1" max="10" v-model.number="row.confidence_score" /></label>
-          <label><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-          <label><span>Checklist passed *</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
+          <label :title="fieldHint('snapshot_setup_type')"><span>Setup Type *</span><select v-model="row.setup_type"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
+          <label :title="fieldHint('snapshot_timeframe')"><span>Timeframe *</span><select v-model="row.timeframe"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
+          <label :title="fieldHint('snapshot_confidence')"><span>Confidence (1-10)</span><input type="number" min="1" max="10" v-model.number="row.confidence_score" /></label>
+          <label :title="fieldHint('snapshot_setup_tag')"><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+          <label :title="fieldHint('snapshot_checklist_passed')"><span>Checklist passed *</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
         </div>
         <div class="section-title minor">Execution Plan</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label><span>Planned Entry *</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
-          <label><span>Planned Stop *</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
-          <label><span>Planned Target *</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
-          <label><span>Planned Risk (R) *</span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" /></label>
+          <label :title="fieldHint('snapshot_planned_entry')"><span>Planned Entry *</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
+          <label :title="fieldHint('snapshot_planned_stop')"><span>Planned Stop *</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
+          <label :title="fieldHint('snapshot_planned_target')"><span>Planned Target *</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
+          <label :title="fieldHint('snapshot_planned_risk')"><span>Planned Risk (R) *</span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" /></label>
         </div>
         <div class="muted-copy" :class="confidenceClass(row.confidence_score)">Confidence signal: {{ confidenceSignal(row.confidence_score) }}</div>
         <div class="section-title minor">Logic</div>
@@ -289,11 +289,11 @@
         </div>
         <div v-if="expandedSnapshotLogic.includes(row.local_id)">
           <div class="journal-form-grid workspace-field-grid">
-            <label><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
-            <label><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
+            <label :title="fieldHint('snapshot_trigger_type')"><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
+            <label :title="fieldHint('snapshot_invalidation_type')"><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
           </div>
-          <label><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
-          <label><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
+          <label :title="fieldHint('snapshot_trigger_condition')"><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
+          <label :title="fieldHint('snapshot_invalidation')"><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
         </div>
         <div v-if="!row.checklist_passed" class="save-warning">Checklist not fully passed — allowed, but review confidence should be conservative.</div>
         <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
@@ -658,6 +658,28 @@ const FIELD_HINTS = {
   watchlist: '盘前重点观察标的列表。',
   game_plan: '盘前执行剧本与优先级。',
   catalysts: '盘前重要事件/催化剂。',
+  linked_snapshot: '可选：关联到本笔交易对应的盘前 Snapshot，用于计划与执行对比。',
+  focus_score: '1-5分：专注度评分，5=非常专注。',
+  checkpoint_time: '本次持仓检查的时间点。',
+  emotion_level: '1-10分：当前情绪强度，越高表示情绪波动越明显。',
+  action_bias: '本次检查后偏向动作（继续持有/减仓/止盈/止损）。',
+  risk_budget_r: '当天计划可使用的最大风险预算（R）。',
+  snapshot_symbol: '该 Snapshot 对应的交易标的代码。',
+  snapshot_strategy: '该 Setup 的策略名称或方向。',
+  snapshot_direction: '计划方向：做多(long)或做空(short)。',
+  snapshot_setup_type: '该 Setup 的类型标签。',
+  snapshot_timeframe: '该 Setup 主要参考的时间周期。',
+  snapshot_confidence: '1-10分：该 Setup 的主观把握度。',
+  snapshot_setup_tag: '从 Setup 标签库中选择对应类型（可选）。',
+  snapshot_checklist_passed: '该 Setup 是否通过你的盘前检查清单。',
+  snapshot_planned_entry: '计划入场价格。',
+  snapshot_planned_stop: '计划止损价格。',
+  snapshot_planned_target: '计划止盈价格。',
+  snapshot_planned_risk: '本 Setup 计划承担的风险（R）。',
+  snapshot_trigger_type: '触发该 Setup 的条件类型。',
+  snapshot_invalidation_type: '使该 Setup 失效的条件类型。',
+  snapshot_trigger_condition: '触发条件的详细描述。',
+  snapshot_invalidation: '失效条件的详细描述。',
 }
 
 function fieldHint(key) {
@@ -1369,12 +1391,13 @@ onMounted(async () => {
   border: 1px solid #dbe3f4;
   border-radius: 10px;
   padding: 10px 12px;
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .queue-date-pill {
-  display: grid;
-  min-height: 108px;
-  align-content: center;
   gap: 8px;
 }
 
@@ -1404,6 +1427,19 @@ onMounted(async () => {
   color: #0f172a;
   border-bottom-color: #2563eb;
   background: transparent;
+}
+
+.review-workspace-page :deep(button.secondary),
+.review-workspace-page :deep(.secondary.small-btn) {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.review-workspace-page :deep(button.secondary:hover),
+.review-workspace-page :deep(.secondary.small-btn:hover) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
 }
 
 .trade-card-grid {
