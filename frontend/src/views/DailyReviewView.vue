@@ -78,11 +78,11 @@
                   <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
                 </select>
               </label>
-              <label><span>Linked Snapshot *</span>
-                <select v-model="tradeReviewForms[card.trade_group_id].selected_snapshot">
+              <label><span>Linked Snapshot</span>
+                <select v-model.number="tradeReviewForms[card.trade_group_id].selected_snapshot">
                   <option :value="null">-</option>
-                  <option v-for="opt in card.snapshot_options || []" :key="opt.id" :value="opt.id">
-                    #{{ opt.id }} · {{ opt.setup_type }} · {{ opt.timeframe }} · Entry {{ opt.planned_entry ?? '-' }} · Risk {{ opt.planned_risk_r ?? '-' }}R
+                  <option v-for="opt in card.snapshot_options || []" :key="opt.id" :value="Number(opt.id)">
+                    #{{ opt.id }} · {{ opt.symbol }} · {{ opt.setup_type }} · {{ opt.timeframe }} · Entry {{ opt.planned_entry ?? '-' }} · Risk {{ opt.planned_risk_r ?? '-' }}R
                   </option>
                 </select>
               </label>
@@ -125,6 +125,9 @@
             </div>
             <div v-if="tradeSaveErrors[card.trade_group_id]" class="save-error">
               {{ tradeSaveErrors[card.trade_group_id] }}
+            </div>
+            <div v-if="tradeSaveWarnings[card.trade_group_id]" class="save-warning">
+              {{ tradeSaveWarnings[card.trade_group_id] }}
             </div>
           </div>
         </div>
@@ -293,6 +296,7 @@
         <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
         <div class="filter-action-row">
           <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
+          <button class="secondary" @click="removeSnapshotRow(row)">Delete Snapshot</button>
         </div>
       </div>
       <button class="secondary" @click="addSnapshotRow" :disabled="riskLimitReached">Add Snapshot</button>
@@ -530,6 +534,7 @@ import {
   updatePretradePlan,
   updateSetupSnapshot,
   saveSetupSnapshot,
+  deleteSetupSnapshot,
   saveTradeReview,
   uploadDailyReviewImages,
 } from '../api/journal'
@@ -550,6 +555,7 @@ const savingPosition = ref(null)
 const uploadingTrade = ref(null)
 const uploadingDailyImage = ref(false)
 const tradeSaveErrors = ref({})
+const tradeSaveWarnings = ref({})
 const maxLossSelection = ref('')
 const tradeSectionRef = ref(null)
 const dailySectionRef = ref(null)
@@ -752,7 +758,7 @@ function hydrateCardForms(cards) {
     const review = card.trade_review || {}
     next[card.trade_group_id] = {
       trade_group: card.trade_group_id,
-      selected_snapshot: card.selected_snapshot_id || null,
+      selected_snapshot: card.selected_snapshot_id ? Number(card.selected_snapshot_id) : null,
       strategy: review.strategy || '',
       setup: review.setup || null,
       final_grade: review.final_grade || '',
@@ -912,10 +918,9 @@ async function saveCardReview(tradeGroupId) {
   savingTrade.value = tradeGroupId
   try {
     const payload = { ...tradeReviewForms.value[tradeGroupId] }
-    if (!payload.selected_snapshot) {
-      tradeSaveErrors.value[tradeGroupId] = 'Please link a setup snapshot before saving trade review.'
-      return
-    }
+    tradeSaveWarnings.value[tradeGroupId] = payload.selected_snapshot
+      ? ''
+      : '未关联 Linked Snapshot：本次允许保存，但建议后续补充以便计划对照分析。'
     payload.entry_quality = normalizeScore(payload.entry_quality)
     payload.exit_quality = normalizeScore(payload.exit_quality)
     payload.risk_management = normalizeScore(payload.risk_management)
@@ -1016,6 +1021,12 @@ async function savePretrade() {
 
 function addSnapshotRow() {
   snapshotForms.value.push(buildLocalSnapshot())
+}
+
+async function removeSnapshotRow(row) {
+  if (row.id) await deleteSetupSnapshot(row.id)
+  snapshotForms.value = snapshotForms.value.filter((item) => item.local_id !== row.local_id)
+  if (!snapshotForms.value.length) snapshotForms.value = [buildLocalSnapshot()]
 }
 
 async function saveSnapshot(row) {

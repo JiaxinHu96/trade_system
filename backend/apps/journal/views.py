@@ -164,7 +164,7 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
             snapshot = None
             snapshot_options = []
             if pretrade:
-                symbol_snapshots_qs = pretrade.setup_snapshots.filter(symbol__iexact=group.symbol).order_by('-updated_at')
+                snapshot_qs = pretrade.setup_snapshots.order_by('-updated_at')
                 snapshot_options = [{
                     'id': row.id,
                     'symbol': row.symbol,
@@ -176,8 +176,10 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
                     'checklist_passed': row.checklist_passed,
                     'is_bound': bool(row.trade_group_id),
                     'trade_group_id': row.trade_group_id,
-                } for row in symbol_snapshots_qs]
-                snapshot = symbol_snapshots_qs.filter(Q(trade_group_id=group.id) | Q(trade_group__isnull=True)).first()
+                } for row in snapshot_qs]
+                snapshot = snapshot_qs.filter(trade_group_id=group.id).first()
+                if not snapshot:
+                    snapshot = snapshot_qs.filter(Q(symbol__iexact=group.symbol), Q(trade_group__isnull=True) | Q(trade_group_id=group.id)).first()
             selected_snapshot = getattr(group, 'pretrade_snapshot', None) or snapshot
             actual_entry = group.avg_buy_price if group.direction == 'long' else group.avg_sell_price
             actual_exit = group.avg_sell_price if group.direction == 'long' else group.avg_buy_price
