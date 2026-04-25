@@ -115,6 +115,8 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
             status='closed',
         ).order_by('closed_at', 'id')
         open_positions = TradeGroup.objects.filter(
+            status='open',
+        ).filter(
             Q(opened_at__date__lte=selected_date) | Q(trade_date__lte=selected_date),
         ).exclude(open_qty=Decimal('0')).order_by('opened_at', 'id')
 
