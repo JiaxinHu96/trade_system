@@ -21,7 +21,7 @@
     <section class="card workspace-summary-card">
       <div class="journal-form-grid workspace-summary-grid">
         <div class="stat-pill queue-date-pill" :title="fieldHint('queue_date')">
-          <div class="stat-label">Queue Date</div>
+          <div class="stat-label">Date</div>
           <input class="queue-date-input" v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" />
         </div>
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
@@ -1427,9 +1427,9 @@ onMounted(async () => {
   border-radius: 10px;
   padding: 10px 12px;
   min-height: 108px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  display: grid;
+  align-content: start;
+  gap: 6px;
 }
 
 .queue-date-pill {
@@ -1450,18 +1450,30 @@ onMounted(async () => {
 }
 
 .tv-panel-tabs .tv-subtab {
-  background: transparent;
-  border-radius: 0;
-  border: none;
-  border-bottom: 2px solid transparent;
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #dbe3f4;
   color: #64748b;
-  padding: 8px 12px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .tv-panel-tabs .tv-subtab.active {
-  color: #0f172a;
-  border-bottom-color: #2563eb;
-  background: transparent;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.1);
+}
+
+.tv-panel-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fbff;
 }
 
 .review-workspace-page :deep(button.secondary),
