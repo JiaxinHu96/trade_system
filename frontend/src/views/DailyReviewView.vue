@@ -197,7 +197,7 @@
       <div class="section-title">Open Position Checkpoints</div>
       <div v-if="!queue.open_positions?.length" class="empty-row">No open positions.</div>
       <div v-for="item in queue.open_positions" :key="item.trade_group_id" class="journal-entry-card" style="margin-bottom:10px;">
-        <div class="journal-entry-head"><div><strong>{{ item.symbol }}</strong> · Qty {{ item.open_qty }} · Avg cost {{ item.avg_open_cost || '-' }}</div><button class="secondary small-btn" @click="togglePosition(item.trade_group_id)">{{ expandedPositions.includes(item.trade_group_id) ? 'Close' : 'Checkpoint' }}</button></div>
+        <div class="journal-entry-head"><div><strong>{{ item.symbol }}</strong> · Qty {{ item.open_qty }} · Avg cost {{ item.avg_open_cost || '-' }} · Opened {{ formatOpenedAt(item.opened_at) }}</div><button class="secondary small-btn" @click="togglePosition(item.trade_group_id)">{{ expandedPositions.includes(item.trade_group_id) ? 'Close' : 'Checkpoint' }}</button></div>
         <div v-if="expandedPositions.includes(item.trade_group_id)" class="accordion-body">
           <div class="journal-form-grid">
             <label :title="fieldHint('thesis_status')"><span>Thesis status</span><select v-model="positionForms[item.trade_group_id].status"><option value="open">still valid</option><option value="reduced">weakened</option><option value="closed">invalid</option></select></label>
@@ -221,9 +221,9 @@
         <div class="journal-form-grid workspace-field-grid">
           <label :title="fieldHint('queue_date')"><span>Plan Date</span><input v-model="pretradeDate" type="date" @change="loadPretrade" @click="openDatePicker" @focus="openDatePicker" /></label>
           <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
-          <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="pretradeForm.market_regime" /></label>
+          <label :title="fieldHint('market_regime')"><span>Market Regime <span class="required-asterisk">*</span></span><input v-model="pretradeForm.market_regime" :class="{ 'field-missing': pretradeSubmitAttempted && !pretradeForm.market_regime }" :placeholder="pretradeSubmitAttempted && !pretradeForm.market_regime ? 'Required field' : ''" /></label>
           <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
-          <label :title="fieldHint('risk_budget_r')"><span>Risk Budget (R) *</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
+          <label :title="fieldHint('risk_budget_r')"><span>Risk Budget (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" :class="{ 'field-missing': pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) }" :placeholder="pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) ? 'Required field' : ''" /></label>
         </div>
       </div>
       <div class="pretrade-module-card">
@@ -263,24 +263,24 @@
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
         <div class="section-title minor">Basic</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label :title="fieldHint('snapshot_symbol')"><span>Symbol *</span><input v-model="row.symbol" /></label>
-          <label :title="fieldHint('snapshot_strategy')"><span>Strategy *</span><input v-model="row.strategy" /></label>
-          <label :title="fieldHint('snapshot_direction')"><span>Direction *</span><select v-model="row.direction"><option value="long">long</option><option value="short">short</option></select></label>
+          <label :title="fieldHint('snapshot_symbol')"><span>Symbol <span class="required-asterisk">*</span></span><input v-model="row.symbol" :class="{ 'field-missing': isSnapshotMissing(row, 'symbol') }" :placeholder="isSnapshotMissing(row, 'symbol') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_strategy')"><span>Strategy <span class="required-asterisk">*</span></span><input v-model="row.strategy" :class="{ 'field-missing': isSnapshotMissing(row, 'strategy') }" :placeholder="isSnapshotMissing(row, 'strategy') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_direction')"><span>Direction <span class="required-asterisk">*</span></span><select v-model="row.direction" :class="{ 'field-missing': isSnapshotMissing(row, 'direction') }"><option value="long">long</option><option value="short">short</option></select></label>
         </div>
         <div class="section-title minor">Setup</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label :title="fieldHint('snapshot_setup_type')"><span>Setup Type *</span><select v-model="row.setup_type"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
-          <label :title="fieldHint('snapshot_timeframe')"><span>Timeframe *</span><select v-model="row.timeframe"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
+          <label :title="fieldHint('snapshot_setup_type')"><span>Setup Type <span class="required-asterisk">*</span></span><select v-model="row.setup_type" :class="{ 'field-missing': isSnapshotMissing(row, 'setup_type') }"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
+          <label :title="fieldHint('snapshot_timeframe')"><span>Timeframe <span class="required-asterisk">*</span></span><select v-model="row.timeframe" :class="{ 'field-missing': isSnapshotMissing(row, 'timeframe') }"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
           <label :title="fieldHint('snapshot_confidence')"><span>Confidence (1-10)</span><input type="number" min="1" max="10" v-model.number="row.confidence_score" /></label>
           <label :title="fieldHint('snapshot_setup_tag')"><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-          <label :title="fieldHint('snapshot_checklist_passed')"><span>Checklist passed *</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
+          <label :title="fieldHint('snapshot_checklist_passed')"><span>Checklist passed <span class="required-asterisk">*</span></span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
         </div>
         <div class="section-title minor">Execution Plan</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label :title="fieldHint('snapshot_planned_entry')"><span>Planned Entry *</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
-          <label :title="fieldHint('snapshot_planned_stop')"><span>Planned Stop *</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
-          <label :title="fieldHint('snapshot_planned_target')"><span>Planned Target *</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
-          <label :title="fieldHint('snapshot_planned_risk')"><span>Planned Risk (R) *</span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" /></label>
+          <label :title="fieldHint('snapshot_planned_entry')"><span>Planned Entry <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_entry" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_entry') }" :placeholder="isSnapshotMissing(row, 'planned_entry') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_planned_stop')"><span>Planned Stop <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_stop" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_stop') }" :placeholder="isSnapshotMissing(row, 'planned_stop') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_planned_target')"><span>Planned Target <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_target" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_target') }" :placeholder="isSnapshotMissing(row, 'planned_target') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_planned_risk')"><span>Planned Risk (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_risk_r') }" :placeholder="isSnapshotMissing(row, 'planned_risk_r') ? 'Required field' : ''" /></label>
         </div>
         <div class="muted-copy" :class="confidenceClass(row.confidence_score)">Confidence signal: {{ confidenceSignal(row.confidence_score) }}</div>
         <div class="section-title minor">Logic</div>
@@ -596,6 +596,8 @@ const savingPretrade = ref(false)
 const savingSnapshotId = ref(null)
 const pretradeError = ref('')
 const snapshotErrors = ref({})
+const pretradeSubmitAttempted = ref(false)
+const snapshotSubmitAttempted = ref({})
 const queuePretradeReady = ref(true)
 const queuePretradeMessage = ref('')
 const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [], strategy_edge_ranking: [], mistake_impact: [], plan_adherence: {}, insights: [] })
@@ -684,6 +686,31 @@ const FIELD_HINTS = {
 
 function fieldHint(key) {
   return FIELD_HINTS[key] || ''
+}
+
+function syncLabelTitleTargets() {
+  nextTick(() => {
+    const labels = document.querySelectorAll('.review-workspace-page label[title]')
+    labels.forEach((label) => {
+      const hint = label.getAttribute('title')
+      const span = label.querySelector('span')
+      if (hint && span) span.setAttribute('title', hint)
+    })
+  })
+}
+
+function formatOpenedAt(value) {
+  if (!value) return '-'
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return String(value)
+  return dt.toLocaleString()
+}
+
+function isSnapshotMissing(row, key) {
+  if (!snapshotSubmitAttempted.value[row.local_id]) return false
+  if (key === 'planned_risk_r') return !(Number(row.planned_risk_r) > 0)
+  if (['planned_entry', 'planned_stop', 'planned_target'].includes(key)) return row[key] == null || row[key] === ''
+  return !row[key]
 }
 
 function askConfirm({ title = 'Confirm', message = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel' } = {}) {
@@ -899,6 +926,7 @@ async function loadQueue() {
   hydratePositionForms(queue.value.open_positions || [])
   hydrateDailyReview(queue.value.daily_review)
   await loadQueuePretradeStatus()
+  syncLabelTitleTargets()
 }
 
 async function loadTimeline() {
@@ -961,16 +989,19 @@ async function toggleTimelineTrades(reviewDate) {
 async function openTimelineTab() {
   journalTab.value = 'timeline'
   if (!dailyTimeline.value.length) await loadTimeline()
+  syncLabelTitleTargets()
 }
 
 async function openPretradeTab() {
   journalTab.value = 'pretrade'
   await loadPretrade()
+  syncLabelTitleTargets()
 }
 
 async function openAnalyticsTab() {
   journalTab.value = 'analytics'
   await loadAnalytics()
+  syncLabelTitleTargets()
 }
 
 async function saveCardReview(tradeGroupId) {
@@ -1067,6 +1098,7 @@ async function loadPretrade() {
     snapshotForms.value = [buildLocalSnapshot()]
     expandedSnapshotLogic.value = []
   }
+  syncLabelTitleTargets()
 }
 
 async function savePretrade(withConfirm = true) {
@@ -1081,6 +1113,7 @@ async function savePretrade(withConfirm = true) {
   }
   savingPretrade.value = true
   try {
+    pretradeSubmitAttempted.value = true
     pretradeError.value = ''
     if (!pretradeForm.value.market_regime) {
       pretradeError.value = 'Market regime is required.'
@@ -1139,6 +1172,7 @@ async function saveSnapshot(row) {
     cancelText: 'Cancel',
   })
   if (!ok) return
+  snapshotSubmitAttempted.value = { ...snapshotSubmitAttempted.value, [row.local_id]: true }
   if (!pretradeForm.value.id) await savePretrade(false)
   if (!pretradeForm.value.id) return
   snapshotErrors.value[row.local_id] = ''
@@ -1347,6 +1381,7 @@ onMounted(async () => {
   await loadTimeline()
   await loadPretrade()
   await loadAnalytics()
+  syncLabelTitleTargets()
   nextTick(() => focusFirstPending())
 })
 </script>
@@ -1591,6 +1626,21 @@ onMounted(async () => {
   margin-top: 8px;
   color: #92400e;
   font-size: 12px;
+}
+
+.required-asterisk {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.field-missing {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.15);
+}
+
+.field-missing::placeholder {
+  color: #dc2626;
+  opacity: 1;
 }
 
 .confirm-modal-mask {
