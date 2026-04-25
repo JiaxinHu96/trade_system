@@ -20,13 +20,16 @@
     <template v-if="journalTab === 'workspace'">
     <section class="card workspace-summary-card">
       <div class="journal-form-grid workspace-summary-grid">
-        <label :title="fieldHint('queue_date')"><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" /></label>
+        <div class="stat-pill queue-date-pill" :title="fieldHint('queue_date')">
+          <div class="stat-label">Date</div>
+          <input class="queue-date-input" v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" />
+        </div>
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Open Positions</div><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Daily Review</div><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
         <div class="stat-pill"><div class="stat-label">Completion</div><div class="stat-value medium">{{ completionRate }}%</div></div>
         <button @click="focusFirstPending" class="secondary" :disabled="!queuePretradeReady">Start Review</button>
-        <div class="muted-copy" v-if="!queuePretradeReady">{{ queuePretradeMessage }}</div>
+        <div class="muted-copy summary-pretrade-note" v-if="!queuePretradeReady">{{ queuePretradeMessage }}</div>
       </div>
     </section>
 
@@ -78,11 +81,11 @@
                   <option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option>
                 </select>
               </label>
-              <label><span>Linked Snapshot *</span>
-                <select v-model="tradeReviewForms[card.trade_group_id].selected_snapshot">
+              <label :title="fieldHint('linked_snapshot')"><span>Linked Snapshot</span>
+                <select v-model.number="tradeReviewForms[card.trade_group_id].selected_snapshot">
                   <option :value="null">-</option>
-                  <option v-for="opt in card.snapshot_options || []" :key="opt.id" :value="opt.id">
-                    #{{ opt.id }} · {{ opt.setup_type }} · {{ opt.timeframe }} · Entry {{ opt.planned_entry ?? '-' }} · Risk {{ opt.planned_risk_r ?? '-' }}R
+                  <option v-for="opt in card.snapshot_options || []" :key="opt.id" :value="Number(opt.id)">
+                    #{{ opt.id }} · {{ opt.symbol }} · {{ opt.setup_type }} · {{ opt.timeframe }} · Entry {{ opt.planned_entry ?? '-' }} · Risk {{ opt.planned_risk_r ?? '-' }}R
                   </option>
                 </select>
               </label>
@@ -126,6 +129,9 @@
             <div v-if="tradeSaveErrors[card.trade_group_id]" class="save-error">
               {{ tradeSaveErrors[card.trade_group_id] }}
             </div>
+            <div v-if="tradeSaveWarnings[card.trade_group_id]" class="save-warning">
+              {{ tradeSaveWarnings[card.trade_group_id] }}
+            </div>
           </div>
         </div>
       </div>
@@ -152,7 +158,7 @@
         <label :title="fieldHint('conviction')"><span>Conviction today (1-10)</span><input type="number" min="1" max="10" v-model.number="form.confidence_score" /></label>
         <label :title="fieldHint('discipline')"><span>Discipline (1-10)</span><input type="number" min="1" max="10" v-model.number="form.discipline_score" /></label>
         <label :title="fieldHint('emotional_control')"><span>Emotional control (1-10)</span><input type="number" min="1" max="10" v-model.number="form.emotional_control_score" /></label>
-        <label><span>Focus (1-5)</span><input type="number" min="1" max="5" v-model.number="form.focus_score" /></label>
+        <label :title="fieldHint('focus_score')"><span>Focus (1-5)</span><input type="number" min="1" max="5" v-model.number="form.focus_score" /></label>
         <label :title="fieldHint('max_daily_loss')"><span>Max daily loss respected</span><select v-model="maxLossSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
       </div>
 
@@ -191,13 +197,13 @@
       <div class="section-title">Open Position Checkpoints</div>
       <div v-if="!queue.open_positions?.length" class="empty-row">No open positions.</div>
       <div v-for="item in queue.open_positions" :key="item.trade_group_id" class="journal-entry-card" style="margin-bottom:10px;">
-        <div class="journal-entry-head"><div><strong>{{ item.symbol }}</strong> · Qty {{ item.open_qty }} · Avg cost {{ item.avg_open_cost || '-' }}</div><button class="secondary small-btn" @click="togglePosition(item.trade_group_id)">{{ expandedPositions.includes(item.trade_group_id) ? 'Close' : 'Checkpoint' }}</button></div>
+        <div class="journal-entry-head"><div><strong>{{ item.symbol }}</strong> · Qty {{ item.open_qty }} · Avg cost {{ item.avg_open_cost || '-' }} · Opened {{ formatOpenedAt(item.opened_at) }}</div><button class="secondary small-btn" @click="togglePosition(item.trade_group_id)">{{ expandedPositions.includes(item.trade_group_id) ? 'Close' : 'Checkpoint' }}</button></div>
         <div v-if="expandedPositions.includes(item.trade_group_id)" class="accordion-body">
           <div class="journal-form-grid">
             <label :title="fieldHint('thesis_status')"><span>Thesis status</span><select v-model="positionForms[item.trade_group_id].status"><option value="open">still valid</option><option value="reduced">weakened</option><option value="closed">invalid</option></select></label>
-            <label><span>Checkpoint Time</span><input type="datetime-local" v-model="positionForms[item.trade_group_id].checkpoint_time" /></label>
-            <label><span>Emotion (1-10)</span><input type="number" min="1" max="10" v-model.number="positionForms[item.trade_group_id].emotion_level" /></label>
-            <label><span>Action bias</span><select v-model="positionForms[item.trade_group_id].action_bias"><option value="hold">hold</option><option value="reduce">reduce</option><option value="take_profit">take_profit</option><option value="stop_out">stop_out</option></select></label>
+            <label :title="fieldHint('checkpoint_time')"><span>Checkpoint Time</span><input type="datetime-local" v-model="positionForms[item.trade_group_id].checkpoint_time" /></label>
+            <label :title="fieldHint('emotion_level')"><span>Emotion (1-10)</span><input type="number" min="1" max="10" v-model.number="positionForms[item.trade_group_id].emotion_level" /></label>
+            <label :title="fieldHint('action_bias')"><span>Action bias</span><select v-model="positionForms[item.trade_group_id].action_bias"><option value="hold">hold</option><option value="reduce">reduce</option><option value="take_profit">take_profit</option><option value="stop_out">stop_out</option></select></label>
           </div>
           <label :title="fieldHint('hold_overnight')"><span>Why hold overnight</span><textarea v-model="positionForms[item.trade_group_id].carry_reason" rows="2"></textarea></label>
           <label :title="fieldHint('risk_tomorrow')"><span>Risk tomorrow</span><textarea v-model="positionForms[item.trade_group_id].gap_risk_note" rows="2"></textarea></label>
@@ -214,10 +220,23 @@
         <div class="section-title minor">① Market Context</div>
         <div class="journal-form-grid workspace-field-grid">
           <label :title="fieldHint('queue_date')"><span>Plan Date</span><input v-model="pretradeDate" type="date" @change="loadPretrade" @click="openDatePicker" @focus="openDatePicker" /></label>
-          <label :title="fieldHint('session_focus')"><span>Session</span><select v-model="pretradeForm.session"><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
-          <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="pretradeForm.market_regime" /></label>
+          <label :title="fieldHint('session_focus')">
+            <span>Session (multi-select)</span>
+            <div class="multi-select-wrap">
+              <button type="button" class="multi-select-trigger" @click="sessionDropdownOpen = !sessionDropdownOpen">
+                {{ selectedSessionLabel }}
+              </button>
+              <div v-if="sessionDropdownOpen" class="multi-select-panel">
+                <label v-for="opt in sessionOptions" :key="opt" class="multi-select-option">
+                  <input type="checkbox" :checked="pretradeSessions.includes(opt)" @change="toggleSessionOption(opt)" />
+                  <span>{{ opt }}</span>
+                </label>
+              </div>
+            </div>
+          </label>
+          <label :title="fieldHint('market_regime')"><span>Market Regime <span class="required-asterisk">*</span></span><input v-model="pretradeForm.market_regime" :class="{ 'field-missing': pretradeSubmitAttempted && !pretradeForm.market_regime }" :placeholder="pretradeSubmitAttempted && !pretradeForm.market_regime ? 'Required field' : ''" /></label>
           <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
-          <label><span>Risk Budget (R) *</span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" /></label>
+          <label :title="fieldHint('risk_budget_r')"><span>Risk Budget (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" :class="{ 'field-missing': pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) }" :placeholder="pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) ? 'Required field' : ''" /></label>
         </div>
       </div>
       <div class="pretrade-module-card">
@@ -257,37 +276,37 @@
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
         <div class="section-title minor">Basic</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label><span>Symbol *</span><input v-model="row.symbol" /></label>
-          <label><span>Strategy *</span><input v-model="row.strategy" /></label>
-          <label><span>Direction *</span><select v-model="row.direction"><option value="long">long</option><option value="short">short</option></select></label>
+          <label :title="fieldHint('snapshot_symbol')"><span>Symbol <span class="required-asterisk">*</span></span><input v-model="row.symbol" :class="{ 'field-missing': isSnapshotMissing(row, 'symbol') }" :placeholder="isSnapshotMissing(row, 'symbol') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_strategy')"><span>Strategy <span class="required-asterisk">*</span></span><input v-model="row.strategy" :class="{ 'field-missing': isSnapshotMissing(row, 'strategy') }" :placeholder="isSnapshotMissing(row, 'strategy') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_direction')"><span>Direction <span class="required-asterisk">*</span></span><select v-model="row.direction" :class="{ 'field-missing': isSnapshotMissing(row, 'direction') }"><option value="long">long</option><option value="short">short</option></select></label>
         </div>
         <div class="section-title minor">Setup</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label><span>Setup Type *</span><select v-model="row.setup_type"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
-          <label><span>Timeframe *</span><select v-model="row.timeframe"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
-          <label><span>Confidence (1-10)</span><input type="number" min="1" max="10" v-model.number="row.confidence_score" /></label>
-          <label><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-          <label><span>Checklist passed *</span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
+          <label :title="fieldHint('snapshot_setup_type')"><span>Setup Type <span class="required-asterisk">*</span></span><select v-model="row.setup_type" :class="{ 'field-missing': isSnapshotMissing(row, 'setup_type') }"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
+          <label :title="fieldHint('snapshot_timeframe')"><span>Timeframe <span class="required-asterisk">*</span></span><select v-model="row.timeframe" :class="{ 'field-missing': isSnapshotMissing(row, 'timeframe') }"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
+          <label :title="fieldHint('snapshot_confidence')"><span>Confidence (1-10)</span><input type="number" min="1" max="10" v-model.number="row.confidence_score" /></label>
+          <label :title="fieldHint('snapshot_setup_tag')"><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+          <label :title="fieldHint('snapshot_checklist_passed')"><span>Checklist passed <span class="required-asterisk">*</span></span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
         </div>
         <div class="section-title minor">Execution Plan</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label><span>Planned Entry *</span><input type="number" step="0.0001" v-model.number="row.planned_entry" /></label>
-          <label><span>Planned Stop *</span><input type="number" step="0.0001" v-model.number="row.planned_stop" /></label>
-          <label><span>Planned Target *</span><input type="number" step="0.0001" v-model.number="row.planned_target" /></label>
-          <label><span>Planned Risk (R) *</span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" /></label>
+          <label :title="fieldHint('snapshot_planned_entry')"><span>Planned Entry <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_entry" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_entry') }" :placeholder="isSnapshotMissing(row, 'planned_entry') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_planned_stop')"><span>Planned Stop <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_stop" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_stop') }" :placeholder="isSnapshotMissing(row, 'planned_stop') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_planned_target')"><span>Planned Target <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_target" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_target') }" :placeholder="isSnapshotMissing(row, 'planned_target') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_planned_risk')"><span>Planned Risk (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_risk_r') }" :placeholder="isSnapshotMissing(row, 'planned_risk_r') ? 'Required field' : ''" /></label>
         </div>
         <div class="muted-copy" :class="confidenceClass(row.confidence_score)">Confidence signal: {{ confidenceSignal(row.confidence_score) }}</div>
-        <div class="section-title minor logic-toggle-row">
-          <span>Logic</span>
+        <div class="section-title minor">Logic</div>
+        <div class="filter-action-row" style="margin-top:0;">
           <button type="button" class="secondary small-btn" @click="toggleSnapshotLogic(row.local_id)">{{ expandedSnapshotLogic.includes(row.local_id) ? 'Hide Logic' : 'Show Logic' }}</button>
         </div>
         <div v-if="expandedSnapshotLogic.includes(row.local_id)">
           <div class="journal-form-grid workspace-field-grid">
-            <label><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
-            <label><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
+            <label :title="fieldHint('snapshot_trigger_type')"><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
+            <label :title="fieldHint('snapshot_invalidation_type')"><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
           </div>
-          <label><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
-          <label><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
+          <label :title="fieldHint('snapshot_trigger_condition')"><span>Trigger condition</span><textarea v-model="row.trigger_condition" rows="2"></textarea></label>
+          <label :title="fieldHint('snapshot_invalidation')"><span>Invalidation</span><textarea v-model="row.invalidation" rows="2"></textarea></label>
         </div>
         <div v-if="!row.checklist_passed" class="save-warning">Checklist not fully passed — allowed, but review confidence should be conservative.</div>
         <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
@@ -295,7 +314,10 @@
           <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
         </div>
       </div>
-      <button class="secondary" @click="addSnapshotRow" :disabled="riskLimitReached">Add Snapshot</button>
+      <div class="filter-action-row">
+        <button class="secondary" @click="addSnapshotRow" :disabled="riskLimitReached">Add Snapshot</button>
+        <button class="secondary" @click="removeLastSnapshotRow" :disabled="!snapshotForms.length">Delete Snapshot</button>
+      </div>
     </section>
 
     <section v-else-if="journalTab === 'analytics'" class="card analytics-surface">
@@ -510,11 +532,22 @@
         </div>
       </div>
     </section>
+
+    <div v-if="confirmDialog.visible" class="confirm-modal-mask" @click="cancelConfirm">
+      <div class="confirm-modal-card" @click.stop>
+        <div class="section-title minor">{{ confirmDialog.title }}</div>
+        <div class="muted-copy" style="margin-top:6px;">{{ confirmDialog.message }}</div>
+        <div class="filter-action-row" style="margin-top:12px;">
+          <button class="secondary" @click="cancelConfirm">{{ confirmDialog.cancelText }}</button>
+          <button @click="acceptConfirm">{{ confirmDialog.confirmText }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import TradesVizChart from '../components/TradesVizChart.vue'
 import {
   createDailyReview,
@@ -530,6 +563,7 @@ import {
   updatePretradePlan,
   updateSetupSnapshot,
   saveSetupSnapshot,
+  deleteSetupSnapshot,
   saveTradeReview,
   uploadDailyReviewImages,
 } from '../api/journal'
@@ -550,6 +584,7 @@ const savingPosition = ref(null)
 const uploadingTrade = ref(null)
 const uploadingDailyImage = ref(false)
 const tradeSaveErrors = ref({})
+const tradeSaveWarnings = ref({})
 const maxLossSelection = ref('')
 const tradeSectionRef = ref(null)
 const dailySectionRef = ref(null)
@@ -566,6 +601,9 @@ const timelineTradeDetailsByDate = ref({})
 const timelineLoadingDate = ref('')
 const pretradeDate = ref(new Date().toISOString().slice(0, 10))
 const pretradeForm = ref({ id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' })
+const pretradeSessions = ref(['premarket'])
+const sessionOptions = ['premarket', 'open', 'midday', 'close']
+const sessionDropdownOpen = ref(false)
 const watchlistText = ref('')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
@@ -574,6 +612,8 @@ const savingPretrade = ref(false)
 const savingSnapshotId = ref(null)
 const pretradeError = ref('')
 const snapshotErrors = ref({})
+const pretradeSubmitAttempted = ref(false)
+const snapshotSubmitAttempted = ref({})
 const queuePretradeReady = ref(true)
 const queuePretradeMessage = ref('')
 const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [], strategy_edge_ranking: [], mistake_impact: [], plan_adherence: {}, insights: [] })
@@ -582,6 +622,8 @@ const analyticsError = ref('')
 const compareDimension = ref('by_strategy')
 const compareLeftKey = ref('')
 const compareRightKey = ref('')
+const confirmDialog = ref({ visible: false, title: 'Confirm', message: '', confirmText: 'Confirm', cancelText: 'Cancel' })
+let confirmResolver = null
 
 const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
@@ -634,10 +676,90 @@ const FIELD_HINTS = {
   watchlist: '盘前重点观察标的列表。',
   game_plan: '盘前执行剧本与优先级。',
   catalysts: '盘前重要事件/催化剂。',
+  linked_snapshot: '可选：关联到本笔交易对应的盘前 Snapshot，用于计划与执行对比。',
+  focus_score: '1-5分：专注度评分，5=非常专注。',
+  checkpoint_time: '本次持仓检查的时间点。',
+  emotion_level: '1-10分：当前情绪强度，越高表示情绪波动越明显。',
+  action_bias: '本次检查后偏向动作（继续持有/减仓/止盈/止损）。',
+  risk_budget_r: '当天计划可使用的最大风险预算（R）。',
+  snapshot_symbol: '该 Snapshot 对应的交易标的代码。',
+  snapshot_strategy: '该 Setup 的策略名称或方向。',
+  snapshot_direction: '计划方向：做多(long)或做空(short)。',
+  snapshot_setup_type: '该 Setup 的类型标签。',
+  snapshot_timeframe: '该 Setup 主要参考的时间周期。',
+  snapshot_confidence: '1-10分：该 Setup 的主观把握度。',
+  snapshot_setup_tag: '从 Setup 标签库中选择对应类型（可选）。',
+  snapshot_checklist_passed: '该 Setup 是否通过你的盘前检查清单。',
+  snapshot_planned_entry: '计划入场价格。',
+  snapshot_planned_stop: '计划止损价格。',
+  snapshot_planned_target: '计划止盈价格。',
+  snapshot_planned_risk: '本 Setup 计划承担的风险（R）。',
+  snapshot_trigger_type: '触发该 Setup 的条件类型。',
+  snapshot_invalidation_type: '使该 Setup 失效的条件类型。',
+  snapshot_trigger_condition: '触发条件的详细描述。',
+  snapshot_invalidation: '失效条件的详细描述。',
 }
 
 function fieldHint(key) {
   return FIELD_HINTS[key] || ''
+}
+
+function syncLabelTitleTargets() {
+  nextTick(() => {
+    const labels = document.querySelectorAll('.review-workspace-page label[title]')
+    labels.forEach((label) => {
+      const hint = label.getAttribute('title')
+      const span = label.querySelector('span')
+      if (hint && span) span.setAttribute('title', hint)
+    })
+  })
+}
+
+function formatOpenedAt(value) {
+  if (!value) return '-'
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return String(value)
+  return dt.toLocaleString()
+}
+
+function isSnapshotMissing(row, key) {
+  if (!snapshotSubmitAttempted.value[row.local_id]) return false
+  if (key === 'planned_risk_r') return !(Number(row.planned_risk_r) > 0)
+  if (['planned_entry', 'planned_stop', 'planned_target'].includes(key)) return row[key] == null || row[key] === ''
+  return !row[key]
+}
+
+function toggleSessionOption(option) {
+  const set = new Set(pretradeSessions.value || [])
+  if (set.has(option)) set.delete(option)
+  else set.add(option)
+  pretradeSessions.value = Array.from(set)
+}
+
+function handleDocumentClick(event) {
+  if (!sessionDropdownOpen.value) return
+  const target = event?.target
+  if (target && typeof target.closest === 'function' && target.closest('.multi-select-wrap')) return
+  sessionDropdownOpen.value = false
+}
+
+function askConfirm({ title = 'Confirm', message = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel' } = {}) {
+  confirmDialog.value = { visible: true, title, message, confirmText, cancelText }
+  return new Promise((resolve) => {
+    confirmResolver = resolve
+  })
+}
+
+function acceptConfirm() {
+  if (confirmResolver) confirmResolver(true)
+  confirmResolver = null
+  confirmDialog.value.visible = false
+}
+
+function cancelConfirm() {
+  if (confirmResolver) confirmResolver(false)
+  confirmResolver = null
+  confirmDialog.value.visible = false
 }
 
 const analyticsDimensionOptions = computed(() => ([
@@ -691,6 +813,10 @@ const holdingTrend = computed(() => {
   const slope = ((n * sumXY) - (sumX * sumY)) / Math.max(1, ((n * sumXX) - (sumX * sumX)))
   const intercept = (sumY - (slope * sumX)) / n
   return xs.map((x) => Number((intercept + (slope * x)).toFixed(2)))
+})
+const selectedSessionLabel = computed(() => {
+  if (!pretradeSessions.value.length) return 'Select sessions'
+  return pretradeSessions.value.join(', ')
 })
 
 const filteredTimeline = computed(() => {
@@ -752,7 +878,7 @@ function hydrateCardForms(cards) {
     const review = card.trade_review || {}
     next[card.trade_group_id] = {
       trade_group: card.trade_group_id,
-      selected_snapshot: card.selected_snapshot_id || null,
+      selected_snapshot: card.selected_snapshot_id ? Number(card.selected_snapshot_id) : null,
       strategy: review.strategy || '',
       setup: review.setup || null,
       final_grade: review.final_grade || '',
@@ -834,6 +960,7 @@ async function loadQueue() {
   hydratePositionForms(queue.value.open_positions || [])
   hydrateDailyReview(queue.value.daily_review)
   await loadQueuePretradeStatus()
+  syncLabelTitleTargets()
 }
 
 async function loadTimeline() {
@@ -896,25 +1023,48 @@ async function toggleTimelineTrades(reviewDate) {
 async function openTimelineTab() {
   journalTab.value = 'timeline'
   if (!dailyTimeline.value.length) await loadTimeline()
+  syncLabelTitleTargets()
 }
 
 async function openPretradeTab() {
   journalTab.value = 'pretrade'
   await loadPretrade()
+  syncLabelTitleTargets()
 }
 
 async function openAnalyticsTab() {
   journalTab.value = 'analytics'
   await loadAnalytics()
+  syncLabelTitleTargets()
 }
 
 async function saveCardReview(tradeGroupId) {
+  const saveOk = await askConfirm({
+    title: 'Save Trade Review',
+    message: '确认保存这条 Trade Review 吗？',
+    confirmText: 'Confirm Save',
+    cancelText: 'Cancel',
+  })
+  if (!saveOk) return
   savingTrade.value = tradeGroupId
   try {
     const payload = { ...tradeReviewForms.value[tradeGroupId] }
-    if (!payload.selected_snapshot) {
-      tradeSaveErrors.value[tradeGroupId] = 'Please link a setup snapshot before saving trade review.'
-      return
+    const card = (queue.value.closed_trades || []).find((item) => item.trade_group_id === tradeGroupId)
+    const selectedOpt = (card?.snapshot_options || []).find((opt) => Number(opt.id) === Number(payload.selected_snapshot))
+    if (selectedOpt && String(selectedOpt.symbol || '').toLowerCase() !== String(card?.symbol || '').toLowerCase()) {
+      const mismatchOk = await askConfirm({
+        title: 'Linked Snapshot Mismatch',
+        message: `所选 Snapshot 的 symbol(${selectedOpt.symbol || '-'}) 与交易 symbol(${card?.symbol || '-'}) 不一致，确认继续保存吗？`,
+        confirmText: 'Continue Save',
+        cancelText: 'Back',
+      })
+      if (!mismatchOk) return
+      payload.selected_snapshot = null
+      tradeSaveWarnings.value[tradeGroupId] = '已按确认结果忽略不匹配的 Linked Snapshot 并继续保存。'
+    } else {
+      tradeSaveWarnings.value[tradeGroupId] = payload.selected_snapshot
+        ? ''
+        : '未关联 Linked Snapshot：本次允许保存，但建议后续补充以便计划对照分析。'
     }
     payload.entry_quality = normalizeScore(payload.entry_quality)
     payload.exit_quality = normalizeScore(payload.exit_quality)
@@ -970,6 +1120,8 @@ async function loadPretrade() {
   const existing = (res.data?.results || res.data || [])[0]
   if (existing) {
     pretradeForm.value = { ...existing }
+    pretradeSessions.value = (existing.session || 'premarket').split(',').map((v) => v.trim()).filter(Boolean)
+    if (!pretradeSessions.value.length) pretradeSessions.value = ['premarket']
     watchlistText.value = (existing.watchlist || []).join(', ')
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false, ...(existing.pre_trade_checklist || {}) }
     const snaps = await fetchSetupSnapshots({ pretrade_plan: existing.id, page_size: 50 })
@@ -977,16 +1129,28 @@ async function loadPretrade() {
     expandedSnapshotLogic.value = []
   } else {
     pretradeForm.value = { id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' }
+    pretradeSessions.value = ['premarket']
     watchlistText.value = ''
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false }
     snapshotForms.value = [buildLocalSnapshot()]
     expandedSnapshotLogic.value = []
   }
+  syncLabelTitleTargets()
 }
 
-async function savePretrade() {
+async function savePretrade(withConfirm = true) {
+  if (withConfirm) {
+    const ok = await askConfirm({
+      title: 'Save Pre-Trade Plan',
+      message: '确认保存 Pre-Trade Plan 吗？',
+      confirmText: 'Confirm Save',
+      cancelText: 'Cancel',
+    })
+    if (!ok) return
+  }
   savingPretrade.value = true
   try {
+    pretradeSubmitAttempted.value = true
     pretradeError.value = ''
     if (!pretradeForm.value.market_regime) {
       pretradeError.value = 'Market regime is required.'
@@ -1002,6 +1166,7 @@ async function savePretrade() {
     }
     const payload = {
       ...pretradeForm.value,
+      session: (pretradeSessions.value || []).join(','),
       plan_date: pretradeDate.value,
       watchlist: watchlistText.value.split(',').map((v) => v.trim()).filter(Boolean),
       pre_trade_checklist: { ...pretradeChecklist.value },
@@ -1018,8 +1183,36 @@ function addSnapshotRow() {
   snapshotForms.value.push(buildLocalSnapshot())
 }
 
+async function removeSnapshotRow(row) {
+  const ok = await askConfirm({
+    title: 'Delete Snapshot',
+    message: '确认删除这个 Snapshot 吗？此操作不可撤销。',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
+  if (row.id) await deleteSetupSnapshot(row.id)
+  snapshotForms.value = snapshotForms.value.filter((item) => item.local_id !== row.local_id)
+  if (!snapshotForms.value.length) snapshotForms.value = [buildLocalSnapshot()]
+}
+
+async function removeLastSnapshotRow() {
+  if (!snapshotForms.value.length) return
+  const target = snapshotForms.value[snapshotForms.value.length - 1]
+  await removeSnapshotRow(target)
+}
+
 async function saveSnapshot(row) {
-  if (!pretradeForm.value.id) await savePretrade()
+  const ok = await askConfirm({
+    title: 'Save Snapshot',
+    message: '确认保存这个 Snapshot 吗？',
+    confirmText: 'Confirm Save',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
+  snapshotSubmitAttempted.value = { ...snapshotSubmitAttempted.value, [row.local_id]: true }
+  if (!pretradeForm.value.id) await savePretrade(false)
+  if (!pretradeForm.value.id) return
   snapshotErrors.value[row.local_id] = ''
   if (!(Number(row.planned_risk_r) > 0)) {
     snapshotErrors.value[row.local_id] = 'Planned risk (R) is required and must be greater than 0.'
@@ -1130,12 +1323,27 @@ async function uploadTradeScreenshots(tradeGroupId, event) {
 }
 
 function removeTradeScreenshot(tradeGroupId, index) {
-  const arr = [...(tradeReviewForms.value[tradeGroupId].screenshots || [])]
-  arr.splice(index, 1)
-  tradeReviewForms.value[tradeGroupId].screenshots = arr
+  askConfirm({
+    title: 'Delete Screenshot',
+    message: '确认删除这张截图吗？',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+  }).then((ok) => {
+    if (!ok) return
+    const arr = [...(tradeReviewForms.value[tradeGroupId].screenshots || [])]
+    arr.splice(index, 1)
+    tradeReviewForms.value[tradeGroupId].screenshots = arr
+  })
 }
 
 async function saveCheckpoint(tradeGroupId) {
+  const ok = await askConfirm({
+    title: 'Save Checkpoint',
+    message: '确认保存这个 Position Checkpoint 吗？',
+    confirmText: 'Confirm Save',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
   savingPosition.value = tradeGroupId
   try {
     await savePositionCheckpoint({ ...positionForms.value[tradeGroupId] })
@@ -1160,12 +1368,27 @@ async function uploadDailyScreenshots(event) {
 }
 
 function removeDailyScreenshot(index) {
-  const arr = [...(form.value.image_urls || [])]
-  arr.splice(index, 1)
-  form.value.image_urls = arr
+  askConfirm({
+    title: 'Delete Screenshot',
+    message: '确认删除这张截图吗？',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+  }).then((ok) => {
+    if (!ok) return
+    const arr = [...(form.value.image_urls || [])]
+    arr.splice(index, 1)
+    form.value.image_urls = arr
+  })
 }
 
 async function saveDailyReview(mode = 'draft') {
+  const ok = await askConfirm({
+    title: mode === 'completed' ? 'Mark Complete' : 'Save Draft',
+    message: mode === 'completed' ? '确认保存并标记为 Completed 吗？' : '确认保存 Daily Review 草稿吗？',
+    confirmText: 'Confirm Save',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
   savingDaily.value = true
   try {
     const payload = { ...form.value, review_date: queueDate.value }
@@ -1191,12 +1414,18 @@ function focusFirstPending() {
 }
 
 onMounted(async () => {
+  document.addEventListener('click', handleDocumentClick)
   await loadMetaTags()
   await loadQueue()
   await loadTimeline()
   await loadPretrade()
   await loadAnalytics()
+  syncLabelTitleTargets()
   nextTick(() => focusFirstPending())
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
 })
 </script>
 
@@ -1240,6 +1469,22 @@ onMounted(async () => {
   border: 1px solid #dbe3f4;
   border-radius: 10px;
   padding: 10px 12px;
+  min-height: 82px;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.summary-pretrade-note {
+  white-space: nowrap;
+}
+
+.queue-date-pill {
+  gap: 8px;
+}
+
+.queue-date-input {
+  width: 100%;
 }
 
 .workspace-summary-card .stat-value {
@@ -1252,18 +1497,43 @@ onMounted(async () => {
 }
 
 .tv-panel-tabs .tv-subtab {
-  background: transparent;
-  border-radius: 0;
-  border: none;
-  border-bottom: 2px solid transparent;
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #dbe3f4;
   color: #64748b;
-  padding: 8px 12px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .tv-panel-tabs .tv-subtab.active {
-  color: #0f172a;
-  border-bottom-color: #2563eb;
-  background: transparent;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.1);
+}
+
+.tv-panel-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.review-workspace-page :deep(button.secondary),
+.review-workspace-page :deep(.secondary.small-btn) {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.review-workspace-page :deep(button.secondary:hover),
+.review-workspace-page :deep(.secondary.small-btn:hover) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
 }
 
 .trade-card-grid {
@@ -1371,6 +1641,41 @@ onMounted(async () => {
   padding: 8px 10px;
 }
 
+.multi-select-wrap {
+  position: relative;
+}
+
+.multi-select-trigger {
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #111827;
+}
+
+.multi-select-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: #fff;
+  border: 1px solid #dbe3f4;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.15);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.multi-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .trade-review-text-grid :deep(textarea) {
   min-height: 72px;
 }
@@ -1415,6 +1720,41 @@ onMounted(async () => {
   margin-top: 8px;
   color: #92400e;
   font-size: 12px;
+}
+
+.required-asterisk {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.field-missing {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.15);
+}
+
+.field-missing::placeholder {
+  color: #dc2626;
+  opacity: 1;
+}
+
+.confirm-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.confirm-modal-card {
+  width: min(520px, 92vw);
+  background: #ffffff;
+  border: 1px solid #dbe3f4;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.2);
+  padding: 16px;
 }
 
 .badge-warning {

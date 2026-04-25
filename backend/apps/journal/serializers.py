@@ -134,14 +134,15 @@ class TradeReviewSerializer(serializers.ModelSerializer):
         selected_snapshot = attrs.get('selected_snapshot')
         if not trade_group:
             return attrs
-        if selected_snapshot is None:
-            selected_snapshot = getattr(trade_group, 'pretrade_snapshot', None)
         if not selected_snapshot:
-            raise serializers.ValidationError({'selected_snapshot': 'A setup snapshot is required before saving trade review.'})
+            attrs['resolved_snapshot'] = None
+            return attrs
         if selected_snapshot.symbol.lower() != (trade_group.symbol or '').lower():
-            raise serializers.ValidationError({'selected_snapshot': 'Selected snapshot symbol must match trade symbol.'})
+            attrs['resolved_snapshot'] = None
+            return attrs
         if selected_snapshot.pretrade_plan.plan_date != trade_group.trade_date:
-            raise serializers.ValidationError({'selected_snapshot': 'Selected snapshot must come from the same trade date plan.'})
+            attrs['resolved_snapshot'] = None
+            return attrs
         attrs['resolved_snapshot'] = selected_snapshot
         return attrs
 

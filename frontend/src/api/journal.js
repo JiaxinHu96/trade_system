@@ -32,4 +32,5 @@ export const updatePretradePlan = (id, payload) => api.patch(`/journal/pretrade-
 export const fetchSetupSnapshots = (params = {}) => api.get('/journal/setup-snapshots/', { params })
 export const saveSetupSnapshot = (payload) => api.post('/journal/setup-snapshots/', payload)
 export const updateSetupSnapshot = (id, payload) => api.patch(`/journal/setup-snapshots/${id}/`, payload)
+export const deleteSetupSnapshot = (id) => api.delete(`/journal/setup-snapshots/${id}/`)
 export const fetchTradeReviewAnalyticsSummary = (params = {}) => api.get('/journal/trade-reviews/analytics-summary/', { params })
