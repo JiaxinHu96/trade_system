@@ -26,6 +26,36 @@ def _has_trade_matched_lot_table():
         return TradeMatchedLot._meta.db_table in connection.introspection.table_names(cursor)
 
 
+def _group_signature(
+    *,
+    symbol,
+    asset_class,
+    status,
+    total_buy_qty,
+    total_sell_qty,
+    net_qty,
+    avg_open_cost,
+    realized_pnl,
+    opened_at,
+    closed_at,
+):
+    """
+    Deterministic identity used to retain existing TradeGroup ids across rebuilds.
+    """
+    return (
+        symbol or '',
+        asset_class or '',
+        status or '',
+        _to_decimal(total_buy_qty),
+        _to_decimal(total_sell_qty),
+        _to_decimal(net_qty),
+        _to_decimal(avg_open_cost, default='0') if avg_open_cost is not None else None,
+        _to_decimal(realized_pnl),
+        opened_at,
+        closed_at,
+    )
+
+
 @transaction.atomic
 def create_fill_from_raw(raw_execution: RawIBKRExecution):
     side = (raw_execution.side or '').upper()
@@ -75,12 +105,28 @@ def rebuild_all_trade_groups():
 
     has_matched_lot_table = _has_trade_matched_lot_table()
 
-    TradeLotSnapshot.objects.all().delete()
-    if has_matched_lot_table:
-        TradeMatchedLot.objects.all().delete()
-    TradeGroup.objects.all().delete()
+    existing_groups = list(TradeGroup.objects.all().order_by('id'))
+    existing_by_signature = defaultdict(list)
+    for group in existing_groups:
+        signature = _group_signature(
+            symbol=group.symbol,
+            asset_class=group.asset_class,
+            status=group.status,
+            total_buy_qty=group.total_buy_qty,
+            total_sell_qty=group.total_sell_qty,
+            net_qty=group.net_qty,
+            avg_open_cost=group.avg_open_cost,
+            realized_pnl=group.realized_pnl,
+            opened_at=group.opened_at,
+            closed_at=group.closed_at,
+        )
+        existing_by_signature[signature].append(group)
 
     if not fills:
+        TradeLotSnapshot.objects.all().delete()
+        if has_matched_lot_table:
+            TradeMatchedLot.objects.all().delete()
+        TradeGroup.objects.all().delete()
         return
 
     trade_buckets = []
@@ -184,6 +230,7 @@ def rebuild_all_trade_groups():
                 }
             )
 
+    retained_group_ids = set()
     for bucket in sorted(
         trade_buckets,
         key=lambda item: (
@@ -205,24 +252,49 @@ def rebuild_all_trade_groups():
         if bucket['total_sell_qty'] > ZERO:
             avg_sell_price = bucket['sell_notional'] / bucket['total_sell_qty']
 
-        group = TradeGroup.objects.create(
+        signature = _group_signature(
             symbol=bucket['symbol'],
-            trade_date=group_trade_date,
             asset_class=bucket['asset_class'],
-            direction=bucket['direction'],
             status=bucket['status'],
             total_buy_qty=bucket['total_buy_qty'],
             total_sell_qty=bucket['total_sell_qty'],
             net_qty=bucket['net_qty'],
-            avg_buy_price=avg_buy_price,
-            avg_sell_price=avg_sell_price,
             avg_open_cost=bucket['avg_open_cost'],
-            open_qty=bucket['open_qty'],
             realized_pnl=bucket['realized_pnl'],
-            commission_total=bucket['commission_total'],
             opened_at=bucket['opened_at'],
             closed_at=bucket['closed_at'],
         )
+        candidates = existing_by_signature.get(signature) or []
+        group = candidates.pop(0) if candidates else None
+        payload = {
+            'symbol': bucket['symbol'],
+            'trade_date': group_trade_date,
+            'asset_class': bucket['asset_class'],
+            'direction': bucket['direction'],
+            'status': bucket['status'],
+            'total_buy_qty': bucket['total_buy_qty'],
+            'total_sell_qty': bucket['total_sell_qty'],
+            'net_qty': bucket['net_qty'],
+            'avg_buy_price': avg_buy_price,
+            'avg_sell_price': avg_sell_price,
+            'avg_open_cost': bucket['avg_open_cost'],
+            'open_qty': bucket['open_qty'],
+            'realized_pnl': bucket['realized_pnl'],
+            'commission_total': bucket['commission_total'],
+            'opened_at': bucket['opened_at'],
+            'closed_at': bucket['closed_at'],
+        }
+        if group is None:
+            group = TradeGroup.objects.create(**payload)
+        else:
+            for field, value in payload.items():
+                setattr(group, field, value)
+            group.save()
+            group.lot_snapshots.all().delete()
+            if has_matched_lot_table:
+                group.matched_lots.all().delete()
+
+        retained_group_ids.add(group.id)
 
         snapshots = bucket['lot_snapshots']
         if snapshots:
@@ -259,3 +331,7 @@ def rebuild_all_trade_groups():
                     for lot in matched_lots
                 ]
             )
+
+    stale_group_ids = [group.id for group in existing_groups if group.id not in retained_group_ids]
+    if stale_group_ids:
+        TradeGroup.objects.filter(id__in=stale_group_ids).delete()
