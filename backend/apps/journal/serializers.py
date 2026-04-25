@@ -138,9 +138,11 @@ class TradeReviewSerializer(serializers.ModelSerializer):
             attrs['resolved_snapshot'] = None
             return attrs
         if selected_snapshot.symbol.lower() != (trade_group.symbol or '').lower():
-            raise serializers.ValidationError({'selected_snapshot': 'Selected snapshot symbol must match trade symbol.'})
+            attrs['resolved_snapshot'] = None
+            return attrs
         if selected_snapshot.pretrade_plan.plan_date != trade_group.trade_date:
-            raise serializers.ValidationError({'selected_snapshot': 'Selected snapshot must come from the same trade date plan.'})
+            attrs['resolved_snapshot'] = None
+            return attrs
         attrs['resolved_snapshot'] = selected_snapshot
         return attrs
 

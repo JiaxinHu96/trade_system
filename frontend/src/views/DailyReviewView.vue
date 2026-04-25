@@ -280,8 +280,8 @@
           <label><span>Planned Risk (R) *</span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" /></label>
         </div>
         <div class="muted-copy" :class="confidenceClass(row.confidence_score)">Confidence signal: {{ confidenceSignal(row.confidence_score) }}</div>
-        <div class="section-title minor logic-toggle-row">
-          <span>Logic</span>
+        <div class="section-title minor">Logic</div>
+        <div class="filter-action-row" style="margin-top:0;">
           <button type="button" class="secondary small-btn" @click="toggleSnapshotLogic(row.local_id)">{{ expandedSnapshotLogic.includes(row.local_id) ? 'Hide Logic' : 'Show Logic' }}</button>
         </div>
         <div v-if="expandedSnapshotLogic.includes(row.local_id)">
@@ -296,10 +296,12 @@
         <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
         <div class="filter-action-row">
           <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
-          <button class="secondary" @click="removeSnapshotRow(row)">Delete Snapshot</button>
         </div>
       </div>
-      <button class="secondary" @click="addSnapshotRow" :disabled="riskLimitReached">Add Snapshot</button>
+      <div class="filter-action-row">
+        <button class="secondary" @click="addSnapshotRow" :disabled="riskLimitReached">Add Snapshot</button>
+        <button class="secondary" @click="removeLastSnapshotRow" :disabled="!snapshotForms.length">Delete Snapshot</button>
+      </div>
     </section>
 
     <section v-else-if="journalTab === 'analytics'" class="card analytics-surface">
@@ -918,9 +920,16 @@ async function saveCardReview(tradeGroupId) {
   savingTrade.value = tradeGroupId
   try {
     const payload = { ...tradeReviewForms.value[tradeGroupId] }
-    tradeSaveWarnings.value[tradeGroupId] = payload.selected_snapshot
-      ? ''
-      : '未关联 Linked Snapshot：本次允许保存，但建议后续补充以便计划对照分析。'
+    const card = (queue.value.closed_trades || []).find((item) => item.trade_group_id === tradeGroupId)
+    const selectedOpt = (card?.snapshot_options || []).find((opt) => Number(opt.id) === Number(payload.selected_snapshot))
+    if (selectedOpt && String(selectedOpt.symbol || '').toLowerCase() !== String(card?.symbol || '').toLowerCase()) {
+      payload.selected_snapshot = null
+      tradeSaveWarnings.value[tradeGroupId] = 'Linked Snapshot 与交易 symbol 不一致，已自动忽略该关联并继续保存。'
+    } else {
+      tradeSaveWarnings.value[tradeGroupId] = payload.selected_snapshot
+        ? ''
+        : '未关联 Linked Snapshot：本次允许保存，但建议后续补充以便计划对照分析。'
+    }
     payload.entry_quality = normalizeScore(payload.entry_quality)
     payload.exit_quality = normalizeScore(payload.exit_quality)
     payload.risk_management = normalizeScore(payload.risk_management)
@@ -1024,9 +1033,16 @@ function addSnapshotRow() {
 }
 
 async function removeSnapshotRow(row) {
+  if (!window.confirm('确认删除这个 Snapshot 吗？')) return
   if (row.id) await deleteSetupSnapshot(row.id)
   snapshotForms.value = snapshotForms.value.filter((item) => item.local_id !== row.local_id)
   if (!snapshotForms.value.length) snapshotForms.value = [buildLocalSnapshot()]
+}
+
+async function removeLastSnapshotRow() {
+  if (!snapshotForms.value.length) return
+  const target = snapshotForms.value[snapshotForms.value.length - 1]
+  await removeSnapshotRow(target)
 }
 
 async function saveSnapshot(row) {
@@ -1141,6 +1157,7 @@ async function uploadTradeScreenshots(tradeGroupId, event) {
 }
 
 function removeTradeScreenshot(tradeGroupId, index) {
+  if (!window.confirm('确认删除这张截图吗？')) return
   const arr = [...(tradeReviewForms.value[tradeGroupId].screenshots || [])]
   arr.splice(index, 1)
   tradeReviewForms.value[tradeGroupId].screenshots = arr
@@ -1171,6 +1188,7 @@ async function uploadDailyScreenshots(event) {
 }
 
 function removeDailyScreenshot(index) {
+  if (!window.confirm('确认删除这张截图吗？')) return
   const arr = [...(form.value.image_urls || [])]
   arr.splice(index, 1)
   form.value.image_urls = arr
