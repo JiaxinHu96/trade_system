@@ -140,27 +140,24 @@ def rebuild_all_trade_groups():
                     }
                 )
 
-        for snapshot in matcher.snapshot_open_lots():
-            remaining_qty = _to_decimal(snapshot.get('remaining_qty'))
-            if remaining_qty <= ZERO:
-                continue
-            lot_side = (snapshot.get('side') or '').upper()
-            open_price = _to_decimal(snapshot.get('open_price'))
-            opened_at = snapshot.get('opened_at')
-            if lot_side == 'SHORT':
+        open_lots = matcher.snapshot_open_lots()
+        net_open_qty = matcher.get_open_qty()
+        if net_open_qty != ZERO and open_lots:
+            avg_open_cost = matcher.get_avg_open_cost()
+            earliest_opened_at = min((lot.get('opened_at') for lot in open_lots if lot.get('opened_at')), default=None)
+            latest_opened_at = max((lot.get('opened_at') for lot in open_lots if lot.get('opened_at')), default=None)
+            abs_open_qty = abs(net_open_qty)
+            direction = 'SHORT' if net_open_qty < ZERO else 'LONG'
+            if direction == 'SHORT':
                 total_buy_qty = ZERO
-                total_sell_qty = remaining_qty
+                total_sell_qty = abs_open_qty
                 buy_notional = ZERO
-                sell_notional = remaining_qty * open_price
-                net_qty = -remaining_qty
-                direction = 'SHORT'
+                sell_notional = (avg_open_cost or ZERO) * abs_open_qty
             else:
-                total_buy_qty = remaining_qty
+                total_buy_qty = abs_open_qty
                 total_sell_qty = ZERO
-                buy_notional = remaining_qty * open_price
+                buy_notional = (avg_open_cost or ZERO) * abs_open_qty
                 sell_notional = ZERO
-                net_qty = remaining_qty
-                direction = 'LONG'
 
             trade_buckets.append(
                 {
@@ -170,19 +167,19 @@ def rebuild_all_trade_groups():
                     'total_sell_qty': total_sell_qty,
                     'buy_notional': buy_notional,
                     'sell_notional': sell_notional,
-                    'net_qty': net_qty,
-                    'avg_open_cost': open_price,
-                    'open_qty': net_qty,
+                    'net_qty': net_open_qty,
+                    'avg_open_cost': avg_open_cost,
+                    'open_qty': net_open_qty,
                     'realized_pnl': ZERO,
                     'commission_total': ZERO,
-                    'opened_at': opened_at,
+                    'opened_at': earliest_opened_at,
                     'closed_at': None,
-                    'last_fill_at': opened_at,
+                    'last_fill_at': latest_opened_at or earliest_opened_at,
                     'direction': direction,
                     'status': 'open',
                     'had_buy': False,
                     'had_sell': False,
-                    'lot_snapshots': [],
+                    'lot_snapshots': open_lots,
                     'matched_lots': [],
                 }
             )
