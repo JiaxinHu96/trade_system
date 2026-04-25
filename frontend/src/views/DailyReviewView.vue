@@ -220,7 +220,20 @@
         <div class="section-title minor">① Market Context</div>
         <div class="journal-form-grid workspace-field-grid">
           <label :title="fieldHint('queue_date')"><span>Plan Date</span><input v-model="pretradeDate" type="date" @change="loadPretrade" @click="openDatePicker" @focus="openDatePicker" /></label>
-          <label :title="fieldHint('session_focus')"><span>Session (multi-select)</span><select v-model="pretradeSessions" multiple><option value="premarket">premarket</option><option value="open">open</option><option value="midday">midday</option><option value="close">close</option></select></label>
+          <label :title="fieldHint('session_focus')">
+            <span>Session (multi-select)</span>
+            <div class="multi-select-wrap">
+              <button type="button" class="multi-select-trigger" @click="sessionDropdownOpen = !sessionDropdownOpen">
+                {{ selectedSessionLabel }}
+              </button>
+              <div v-if="sessionDropdownOpen" class="multi-select-panel">
+                <label v-for="opt in sessionOptions" :key="opt" class="multi-select-option">
+                  <input type="checkbox" :checked="pretradeSessions.includes(opt)" @change="toggleSessionOption(opt)" />
+                  <span>{{ opt }}</span>
+                </label>
+              </div>
+            </div>
+          </label>
           <label :title="fieldHint('market_regime')"><span>Market Regime <span class="required-asterisk">*</span></span><input v-model="pretradeForm.market_regime" :class="{ 'field-missing': pretradeSubmitAttempted && !pretradeForm.market_regime }" :placeholder="pretradeSubmitAttempted && !pretradeForm.market_regime ? 'Required field' : ''" /></label>
           <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
           <label :title="fieldHint('risk_budget_r')"><span>Risk Budget (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" :class="{ 'field-missing': pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) }" :placeholder="pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) ? 'Required field' : ''" /></label>
@@ -534,7 +547,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import TradesVizChart from '../components/TradesVizChart.vue'
 import {
   createDailyReview,
@@ -589,6 +602,8 @@ const timelineLoadingDate = ref('')
 const pretradeDate = ref(new Date().toISOString().slice(0, 10))
 const pretradeForm = ref({ id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' })
 const pretradeSessions = ref(['premarket'])
+const sessionOptions = ['premarket', 'open', 'midday', 'close']
+const sessionDropdownOpen = ref(false)
 const watchlistText = ref('')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
@@ -714,6 +729,20 @@ function isSnapshotMissing(row, key) {
   return !row[key]
 }
 
+function toggleSessionOption(option) {
+  const set = new Set(pretradeSessions.value || [])
+  if (set.has(option)) set.delete(option)
+  else set.add(option)
+  pretradeSessions.value = Array.from(set)
+}
+
+function handleDocumentClick(event) {
+  if (!sessionDropdownOpen.value) return
+  const target = event?.target
+  if (target && typeof target.closest === 'function' && target.closest('.multi-select-wrap')) return
+  sessionDropdownOpen.value = false
+}
+
 function askConfirm({ title = 'Confirm', message = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel' } = {}) {
   confirmDialog.value = { visible: true, title, message, confirmText, cancelText }
   return new Promise((resolve) => {
@@ -784,6 +813,10 @@ const holdingTrend = computed(() => {
   const slope = ((n * sumXY) - (sumX * sumY)) / Math.max(1, ((n * sumXX) - (sumX * sumX)))
   const intercept = (sumY - (slope * sumX)) / n
   return xs.map((x) => Number((intercept + (slope * x)).toFixed(2)))
+})
+const selectedSessionLabel = computed(() => {
+  if (!pretradeSessions.value.length) return 'Select sessions'
+  return pretradeSessions.value.join(', ')
 })
 
 const filteredTimeline = computed(() => {
@@ -1381,6 +1414,7 @@ function focusFirstPending() {
 }
 
 onMounted(async () => {
+  document.addEventListener('click', handleDocumentClick)
   await loadMetaTags()
   await loadQueue()
   await loadTimeline()
@@ -1388,6 +1422,10 @@ onMounted(async () => {
   await loadAnalytics()
   syncLabelTitleTargets()
   nextTick(() => focusFirstPending())
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
 })
 </script>
 
@@ -1601,6 +1639,41 @@ onMounted(async () => {
 .trade-review-form-grid :deep(select),
 .trade-review-text-grid :deep(textarea) {
   padding: 8px 10px;
+}
+
+.multi-select-wrap {
+  position: relative;
+}
+
+.multi-select-trigger {
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #111827;
+}
+
+.multi-select-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: #fff;
+  border: 1px solid #dbe3f4;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.15);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.multi-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .trade-review-text-grid :deep(textarea) {
