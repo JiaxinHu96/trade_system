@@ -20,7 +20,10 @@
     <template v-if="journalTab === 'workspace'">
     <section class="card workspace-summary-card">
       <div class="journal-form-grid workspace-summary-grid">
-        <label :title="fieldHint('queue_date')"><span>Queue Date</span><input v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" /></label>
+        <div class="stat-pill queue-date-pill" :title="fieldHint('queue_date')">
+          <div class="stat-label">Queue Date</div>
+          <input class="queue-date-input" v-model="queueDate" type="date" @change="loadQueue" @click="openDatePicker" @focus="openDatePicker" />
+        </div>
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Open Positions</div><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Daily Review</div><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
@@ -516,6 +519,17 @@
         </div>
       </div>
     </section>
+
+    <div v-if="confirmDialog.visible" class="confirm-modal-mask" @click="cancelConfirm">
+      <div class="confirm-modal-card" @click.stop>
+        <div class="section-title minor">{{ confirmDialog.title }}</div>
+        <div class="muted-copy" style="margin-top:6px;">{{ confirmDialog.message }}</div>
+        <div class="filter-action-row" style="margin-top:12px;">
+          <button class="secondary" @click="cancelConfirm">{{ confirmDialog.cancelText }}</button>
+          <button @click="acceptConfirm">{{ confirmDialog.confirmText }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -590,6 +604,8 @@ const analyticsError = ref('')
 const compareDimension = ref('by_strategy')
 const compareLeftKey = ref('')
 const compareRightKey = ref('')
+const confirmDialog = ref({ visible: false, title: 'Confirm', message: '', confirmText: 'Confirm', cancelText: 'Cancel' })
+let confirmResolver = null
 
 const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
@@ -646,6 +662,25 @@ const FIELD_HINTS = {
 
 function fieldHint(key) {
   return FIELD_HINTS[key] || ''
+}
+
+function askConfirm({ title = 'Confirm', message = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel' } = {}) {
+  confirmDialog.value = { visible: true, title, message, confirmText, cancelText }
+  return new Promise((resolve) => {
+    confirmResolver = resolve
+  })
+}
+
+function acceptConfirm() {
+  if (confirmResolver) confirmResolver(true)
+  confirmResolver = null
+  confirmDialog.value.visible = false
+}
+
+function cancelConfirm() {
+  if (confirmResolver) confirmResolver(false)
+  confirmResolver = null
+  confirmDialog.value.visible = false
 }
 
 const analyticsDimensionOptions = computed(() => ([
@@ -917,14 +952,28 @@ async function openAnalyticsTab() {
 }
 
 async function saveCardReview(tradeGroupId) {
+  const saveOk = await askConfirm({
+    title: 'Save Trade Review',
+    message: '确认保存这条 Trade Review 吗？',
+    confirmText: 'Confirm Save',
+    cancelText: 'Cancel',
+  })
+  if (!saveOk) return
   savingTrade.value = tradeGroupId
   try {
     const payload = { ...tradeReviewForms.value[tradeGroupId] }
     const card = (queue.value.closed_trades || []).find((item) => item.trade_group_id === tradeGroupId)
     const selectedOpt = (card?.snapshot_options || []).find((opt) => Number(opt.id) === Number(payload.selected_snapshot))
     if (selectedOpt && String(selectedOpt.symbol || '').toLowerCase() !== String(card?.symbol || '').toLowerCase()) {
+      const mismatchOk = await askConfirm({
+        title: 'Linked Snapshot Mismatch',
+        message: `所选 Snapshot 的 symbol(${selectedOpt.symbol || '-'}) 与交易 symbol(${card?.symbol || '-'}) 不一致，确认继续保存吗？`,
+        confirmText: 'Continue Save',
+        cancelText: 'Back',
+      })
+      if (!mismatchOk) return
       payload.selected_snapshot = null
-      tradeSaveWarnings.value[tradeGroupId] = 'Linked Snapshot 与交易 symbol 不一致，已自动忽略该关联并继续保存。'
+      tradeSaveWarnings.value[tradeGroupId] = '已按确认结果忽略不匹配的 Linked Snapshot 并继续保存。'
     } else {
       tradeSaveWarnings.value[tradeGroupId] = payload.selected_snapshot
         ? ''
@@ -998,7 +1047,16 @@ async function loadPretrade() {
   }
 }
 
-async function savePretrade() {
+async function savePretrade(withConfirm = true) {
+  if (withConfirm) {
+    const ok = await askConfirm({
+      title: 'Save Pre-Trade Plan',
+      message: '确认保存 Pre-Trade Plan 吗？',
+      confirmText: 'Confirm Save',
+      cancelText: 'Cancel',
+    })
+    if (!ok) return
+  }
   savingPretrade.value = true
   try {
     pretradeError.value = ''
@@ -1033,7 +1091,13 @@ function addSnapshotRow() {
 }
 
 async function removeSnapshotRow(row) {
-  if (!window.confirm('确认删除这个 Snapshot 吗？')) return
+  const ok = await askConfirm({
+    title: 'Delete Snapshot',
+    message: '确认删除这个 Snapshot 吗？此操作不可撤销。',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
   if (row.id) await deleteSetupSnapshot(row.id)
   snapshotForms.value = snapshotForms.value.filter((item) => item.local_id !== row.local_id)
   if (!snapshotForms.value.length) snapshotForms.value = [buildLocalSnapshot()]
@@ -1046,7 +1110,15 @@ async function removeLastSnapshotRow() {
 }
 
 async function saveSnapshot(row) {
-  if (!pretradeForm.value.id) await savePretrade()
+  const ok = await askConfirm({
+    title: 'Save Snapshot',
+    message: '确认保存这个 Snapshot 吗？',
+    confirmText: 'Confirm Save',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
+  if (!pretradeForm.value.id) await savePretrade(false)
+  if (!pretradeForm.value.id) return
   snapshotErrors.value[row.local_id] = ''
   if (!(Number(row.planned_risk_r) > 0)) {
     snapshotErrors.value[row.local_id] = 'Planned risk (R) is required and must be greater than 0.'
@@ -1157,13 +1229,27 @@ async function uploadTradeScreenshots(tradeGroupId, event) {
 }
 
 function removeTradeScreenshot(tradeGroupId, index) {
-  if (!window.confirm('确认删除这张截图吗？')) return
-  const arr = [...(tradeReviewForms.value[tradeGroupId].screenshots || [])]
-  arr.splice(index, 1)
-  tradeReviewForms.value[tradeGroupId].screenshots = arr
+  askConfirm({
+    title: 'Delete Screenshot',
+    message: '确认删除这张截图吗？',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+  }).then((ok) => {
+    if (!ok) return
+    const arr = [...(tradeReviewForms.value[tradeGroupId].screenshots || [])]
+    arr.splice(index, 1)
+    tradeReviewForms.value[tradeGroupId].screenshots = arr
+  })
 }
 
 async function saveCheckpoint(tradeGroupId) {
+  const ok = await askConfirm({
+    title: 'Save Checkpoint',
+    message: '确认保存这个 Position Checkpoint 吗？',
+    confirmText: 'Confirm Save',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
   savingPosition.value = tradeGroupId
   try {
     await savePositionCheckpoint({ ...positionForms.value[tradeGroupId] })
@@ -1188,13 +1274,27 @@ async function uploadDailyScreenshots(event) {
 }
 
 function removeDailyScreenshot(index) {
-  if (!window.confirm('确认删除这张截图吗？')) return
-  const arr = [...(form.value.image_urls || [])]
-  arr.splice(index, 1)
-  form.value.image_urls = arr
+  askConfirm({
+    title: 'Delete Screenshot',
+    message: '确认删除这张截图吗？',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+  }).then((ok) => {
+    if (!ok) return
+    const arr = [...(form.value.image_urls || [])]
+    arr.splice(index, 1)
+    form.value.image_urls = arr
+  })
 }
 
 async function saveDailyReview(mode = 'draft') {
+  const ok = await askConfirm({
+    title: mode === 'completed' ? 'Mark Complete' : 'Save Draft',
+    message: mode === 'completed' ? '确认保存并标记为 Completed 吗？' : '确认保存 Daily Review 草稿吗？',
+    confirmText: 'Confirm Save',
+    cancelText: 'Cancel',
+  })
+  if (!ok) return
   savingDaily.value = true
   try {
     const payload = { ...form.value, review_date: queueDate.value }
@@ -1269,6 +1369,17 @@ onMounted(async () => {
   border: 1px solid #dbe3f4;
   border-radius: 10px;
   padding: 10px 12px;
+}
+
+.queue-date-pill {
+  display: grid;
+  min-height: 108px;
+  align-content: center;
+  gap: 8px;
+}
+
+.queue-date-input {
+  width: 100%;
 }
 
 .workspace-summary-card .stat-value {
@@ -1444,6 +1555,26 @@ onMounted(async () => {
   margin-top: 8px;
   color: #92400e;
   font-size: 12px;
+}
+
+.confirm-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.confirm-modal-card {
+  width: min(520px, 92vw);
+  background: #ffffff;
+  border: 1px solid #dbe3f4;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.2);
+  padding: 16px;
 }
 
 .badge-warning {
