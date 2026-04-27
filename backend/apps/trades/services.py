@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from django.db import connection
 from django.db import transaction
+from django.utils import timezone
 
 from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot, TradeMatchedLot
 
@@ -266,7 +267,7 @@ def rebuild_all_trade_groups():
 
     has_matched_lot_table = _has_trade_matched_lot_table()
 
-    existing_groups = list(TradeGroup.objects.all().order_by('id'))
+    existing_groups = list(TradeGroup.all_objects.all().order_by('id'))
     existing_by_signature = defaultdict(list)
     existing_by_lifecycle = defaultdict(list)
     for group in existing_groups:
@@ -297,7 +298,7 @@ def rebuild_all_trade_groups():
         TradeLotSnapshot.objects.all().delete()
         if has_matched_lot_table:
             TradeMatchedLot.objects.all().delete()
-        TradeGroup.objects.all().delete()
+        TradeGroup.all_objects.all().delete()
         return
 
     trade_buckets = []
@@ -435,6 +436,9 @@ def rebuild_all_trade_groups():
         else:
             for field, value in payload.items():
                 setattr(group, field, value)
+            group.is_soft_deleted = False
+            group.soft_deleted_at = None
+            group.soft_delete_reason = ''
             group.save()
             group.lot_snapshots.all().delete()
             if has_matched_lot_table:
@@ -461,13 +465,14 @@ def rebuild_all_trade_groups():
     stale_group_ids = [group.id for group in existing_groups if group.id not in retained_group_ids]
     if stale_group_ids:
         stale_groups = list(
-            TradeGroup.objects.filter(id__in=stale_group_ids).prefetch_related(
+            TradeGroup.all_objects.filter(id__in=stale_group_ids).prefetch_related(
                 'daily_reviews',
                 'daily_review_links',
                 'position_checkpoints',
             )
         )
         deletable_ids = []
+        soft_delete_ids = []
         for group in stale_groups:
             has_user_links = any(
                 [
@@ -481,6 +486,14 @@ def rebuild_all_trade_groups():
             )
             if not has_user_links:
                 deletable_ids.append(group.id)
+            else:
+                soft_delete_ids.append(group.id)
 
         if deletable_ids:
-            TradeGroup.objects.filter(id__in=deletable_ids).delete()
+            TradeGroup.all_objects.filter(id__in=deletable_ids).delete()
+        if soft_delete_ids:
+            TradeGroup.all_objects.filter(id__in=soft_delete_ids).update(
+                is_soft_deleted=True,
+                soft_deleted_at=timezone.now(),
+                soft_delete_reason='protected_during_rebuild',
+            )
