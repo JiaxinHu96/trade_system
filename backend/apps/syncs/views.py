@@ -50,3 +50,19 @@ class IBKRConfigDebugAPIView(APIView):
             "token_preview": f"{token[:6]}...{token[-4:]}" if len(token) >= 10 else "",
             "query_id": query_id,
         })
+
+
+class IBKRAccountSummaryAPIView(APIView):
+    def get(self, request):
+        try:
+            client = IBKRClient()
+            summary = client.fetch_account_summary()
+            payload = {
+                "account_id": summary.get("account_id") or "",
+                "currency": summary.get("currency") or "USD",
+                "net_liq": str(summary.get("net_liq")),
+                "as_of": summary.get("as_of") or "",
+            }
+            return Response(payload)
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)

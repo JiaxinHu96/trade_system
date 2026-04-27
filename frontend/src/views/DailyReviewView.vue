@@ -240,7 +240,11 @@
           <label :title="fieldHint('risk_budget_r')"><span>Risk Budget (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" :class="{ 'field-missing': pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) }" :placeholder="pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) ? 'Required field' : ''" /></label>
         </div>
         <div class="risk-pro-panel">
-          <div class="risk-pro-row"><strong>Account:</strong> {{ formatUsd(accountBaseUsd) }}</div>
+          <div class="risk-pro-row risk-pro-row-head">
+            <span><strong>Account:</strong> {{ formatUsd(accountBaseUsd) }}</span>
+            <button type="button" class="secondary small-btn" @click="refreshAccountSummary" :disabled="accountSummaryLoading">{{ accountSummaryLoading ? 'Refreshing...' : 'Refresh' }}</button>
+          </div>
+          <div class="muted-copy">{{ accountSourceLabel }}</div>
           <div class="risk-pro-row"><strong>Risk per trade:</strong> {{ riskPercentPerTrade.toFixed(2) }}% → 1R = {{ formatUsd(oneRUsd) }}</div>
           <div class="risk-pro-row"><strong>Risk Budget (R):</strong> {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R → Risk = {{ formatUsd(tradeRiskUsd) }}</div>
         </div>
@@ -582,6 +586,7 @@ import {
   saveTradeReview,
   uploadDailyReviewImages,
 } from '../api/journal'
+import { fetchIBKRAccountSummary } from '../api/syncs'
 
 const queueDate = ref(new Date().toISOString().slice(0, 10))
 const journalTab = ref('pretrade')
@@ -625,6 +630,8 @@ const accountBaseUsd = ref(10000)
 const riskPercentPerTrade = ref(1)
 const sizingStopLoss = ref(0)
 const dollarPerPoint = ref(1)
+const accountSourceLabel = ref('Source: manual/local value')
+const accountSummaryLoading = ref(false)
 const snapshotForms = ref([])
 const expandedSnapshotLogic = ref([])
 const savingPretrade = ref(false)
@@ -748,6 +755,43 @@ function formatOpenedAt(value) {
 function formatUsd(value) {
   const num = Number(value || 0)
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(num)
+}
+
+function formatEtTime(value) {
+  if (!value) return ''
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return String(value)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(dt)
+  const map = Object.fromEntries(parts.filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]))
+  return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute} ET`
+}
+
+async function refreshAccountSummary({ silent = false } = {}) {
+  if (!silent) accountSummaryLoading.value = true
+  try {
+    const res = await fetchIBKRAccountSummary()
+    const payload = res.data || {}
+    const next = Number(payload.net_liq || 0)
+    if (next > 0) {
+      accountBaseUsd.value = next
+      const asOf = formatEtTime(payload.as_of)
+      accountSourceLabel.value = `Source: Auto from IBKR${asOf ? `, ${asOf}` : ''}`
+      return
+    }
+    accountSourceLabel.value = 'Source: manual/local value (IBKR value unavailable)'
+  } catch (error) {
+    accountSourceLabel.value = 'Source: manual/local value (IBKR fetch failed)'
+  } finally {
+    accountSummaryLoading.value = false
+  }
 }
 
 function isSnapshotMissing(row, key) {
@@ -1463,11 +1507,13 @@ onMounted(async () => {
   riskPercentPerTrade.value = Number(localStorage.getItem('pretrade-risk-pct') || 1)
   sizingStopLoss.value = Number(localStorage.getItem('pretrade-stop-loss') || 0)
   dollarPerPoint.value = Number(localStorage.getItem('pretrade-dollar-per-point') || 1)
+  accountSourceLabel.value = 'Source: manual/local value'
   document.addEventListener('click', handleDocumentClick)
   await loadMetaTags()
   await loadQueue()
   await loadTimeline()
   await loadPretrade()
+  await refreshAccountSummary({ silent: true })
   await loadAnalytics()
   syncLabelTitleTargets()
   nextTick(() => focusFirstPending())
@@ -1894,6 +1940,13 @@ watch(dollarPerPoint, (v) => localStorage.setItem('pretrade-dollar-per-point', S
 
 .risk-pro-row {
   font-size: 13px;
+}
+
+.risk-pro-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .logic-toggle-row {

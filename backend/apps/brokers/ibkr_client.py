@@ -50,6 +50,10 @@ class IBKRClient:
 
         raise TimeoutError("Timed out waiting for Flex statement.")
 
+    def fetch_account_summary(self) -> dict:
+        xml_text = self.fetch_flex_statement_xml()
+        return self.parse_account_summary(xml_text)
+
     def parse_reference_code(self, xml_text: str) -> str | None:
         try:
             root = ET.fromstring(xml_text)
@@ -71,6 +75,71 @@ class IBKRClient:
             rows.append(row)
 
         return rows
+
+    def parse_account_summary(self, xml_text: str) -> dict:
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError as exc:
+            raise ValueError(f"Invalid XML from IBKR Flex statement: {exc}") from exc
+
+        account_id = ""
+        currency = "USD"
+        as_of = ""
+
+        for tag_name in ("FlexStatement", "FlexStatements"):
+            node = root.find(f".//{tag_name}")
+            if node is not None:
+                account_id = (
+                    node.attrib.get("accountId")
+                    or node.attrib.get("account")
+                    or account_id
+                )
+                as_of = (
+                    node.attrib.get("toDate")
+                    or node.attrib.get("fromDate")
+                    or node.attrib.get("whenGenerated")
+                    or as_of
+                )
+
+        preferred = None
+        fallback = None
+        for node in root.iter():
+            attrs = node.attrib or {}
+            if not attrs:
+                continue
+            for key, raw_value in attrs.items():
+                key_norm = key.replace("_", "").replace("-", "").lower()
+                if key_norm not in {"netliquidation", "equitywithloanvalue"}:
+                    continue
+                numeric = self._safe_decimal(raw_value)
+                if numeric is None:
+                    continue
+                node_currency = attrs.get("currency") or attrs.get("ccy") or currency
+                candidate = {
+                    "net_liq": numeric,
+                    "currency": node_currency,
+                    "account_id": attrs.get("accountId") or attrs.get("account") or account_id,
+                    "as_of": attrs.get("reportDate") or attrs.get("date") or as_of,
+                }
+                if str(node_currency).upper() in {"USD", "BASE", "BASE_SUMMARY"}:
+                    preferred = candidate
+                    break
+                if fallback is None:
+                    fallback = candidate
+            if preferred is not None:
+                break
+
+        selected = preferred or fallback
+        if not selected:
+            raise ValueError("No NetLiquidation or EquityWithLoanValue found in Flex XML.")
+
+        result = {
+            "account_id": selected.get("account_id") or account_id or "",
+            "currency": selected.get("currency") or currency,
+            "net_liq": selected["net_liq"],
+            "as_of": selected.get("as_of") or as_of or "",
+        }
+        return result
 
     def map_trade_node(self, data: dict) -> dict:
         side_raw = (data.get("buySell") or "").upper().strip()
@@ -121,3 +190,11 @@ class IBKRClient:
         if value in [None, ""]:
             return Decimal("0")
         return Decimal(str(value).replace(",", ""))
+
+    def _safe_decimal(self, value) -> Decimal | None:
+        if value in [None, ""]:
+            return None
+        try:
+            return Decimal(str(value).replace(",", ""))
+        except Exception:
+            return None
