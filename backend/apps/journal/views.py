@@ -683,12 +683,25 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
     def instrument_search(self, request):
         query = (request.query_params.get('q') or '').strip()
         asset_class = (request.query_params.get('asset_class') or '').strip().upper()
+        load_full = str(request.query_params.get('full') or '').lower() in {'1', 'true', 'yes'}
         try:
             limit = min(200, max(1, int(request.query_params.get('limit') or 50)))
         except (TypeError, ValueError):
             limit = 50
-        if not query:
+        if not query and not load_full:
             return Response({'results': [], 'source': 'none'})
+
+        if load_full:
+            try:
+                rows = self._scan_contract_universe(asset_class=asset_class, limit=max(limit, 500))
+                return Response({'results': rows, 'source': 'ibkr_contract_master_scan'})
+            except Exception as exc:
+                fallback = self._local_fallback_search(query='', asset_class=asset_class, limit=max(limit, 500))
+                return Response({
+                    'results': fallback,
+                    'source': 'imported_executions_fallback',
+                    'error': str(exc),
+                })
 
         # Preferred path: IBKR contract/security-definition search (full-universe capable)
         try:
@@ -697,32 +710,57 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
             return Response({'results': rows, 'source': 'ibkr_contract_master'})
         except Exception as exc:
             # Fallback path: local imported executions only
-            raw_qs = RawIBKRExecution.objects.filter(
-                Q(symbol__icontains=query) | Q(local_symbol__icontains=query)
-            ).order_by('-imported_at', '-executed_at', '-id')
-            if asset_class in {'FUT', 'STK'}:
-                raw_qs = raw_qs.filter(sec_type=asset_class)
-            seen = set()
-            results = []
-            for row in raw_qs[:2000]:
-                key = ((row.symbol or '').upper(), (row.sec_type or '').upper())
-                if not key[0] or key in seen:
-                    continue
-                seen.add(key)
-                results.append({
-                    'symbol': key[0],
-                    'asset_class': key[1] or 'UNKNOWN',
-                    'display_name': (row.local_symbol or '').strip(),
-                    'exchange': (row.exchange or '').strip(),
-                    'conid': (row.conid or '').strip(),
-                })
-                if len(results) >= limit:
-                    break
+            results = self._local_fallback_search(query=query, asset_class=asset_class, limit=limit)
             return Response({
                 'results': results,
                 'source': 'imported_executions_fallback',
                 'error': str(exc),
             })
+
+    def _local_fallback_search(self, query: str, asset_class: str, limit: int):
+        raw_qs = RawIBKRExecution.objects.all().order_by('-imported_at', '-executed_at', '-id')
+        if query:
+            raw_qs = raw_qs.filter(Q(symbol__icontains=query) | Q(local_symbol__icontains=query))
+        if asset_class in {'FUT', 'STK'}:
+            raw_qs = raw_qs.filter(sec_type=asset_class)
+        seen = set()
+        results = []
+        for row in raw_qs[:5000]:
+            key = ((row.symbol or '').upper(), (row.sec_type or '').upper())
+            if not key[0] or key in seen:
+                continue
+            seen.add(key)
+            results.append({
+                'symbol': key[0],
+                'asset_class': key[1] or 'UNKNOWN',
+                'display_name': (row.local_symbol or '').strip(),
+                'exchange': (row.exchange or '').strip(),
+                'conid': (row.conid or '').strip(),
+            })
+            if len(results) >= limit:
+                break
+        return results
+
+    def _scan_contract_universe(self, asset_class: str, limit: int):
+        client = IBKRClient()
+        if asset_class == 'FUT':
+            seeds = ['ES', 'NQ', 'YM', 'RTY', 'CL', 'NG', 'RB', 'HO', 'GC', 'SI', 'HG', '6E', '6J', '6B', 'ZB', 'ZN', 'ZF', 'ZT', 'ZS', 'ZC', 'ZW']
+        else:
+            seeds = list('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+
+        seen = set()
+        rows = []
+        for seed in seeds:
+            partial = client.search_contracts(query=seed, sec_type=asset_class if asset_class in {'FUT', 'STK'} else None, limit=200)
+            for item in partial:
+                key = (item.get('symbol') or '').upper(), (item.get('asset_class') or '').upper(), str(item.get('conid') or '')
+                if not key[0] or key in seen:
+                    continue
+                seen.add(key)
+                rows.append(item)
+                if len(rows) >= limit:
+                    return rows
+        return rows
 
 
 class SetupSnapshotViewSet(viewsets.ModelViewSet):
