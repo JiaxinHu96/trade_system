@@ -236,7 +236,22 @@
           </label>
           <label :title="fieldHint('market_regime')"><span>Market Regime <span class="required-asterisk">*</span></span><input v-model="pretradeForm.market_regime" :class="{ 'field-missing': pretradeSubmitAttempted && !pretradeForm.market_regime }" :placeholder="pretradeSubmitAttempted && !pretradeForm.market_regime ? 'Required field' : ''" /></label>
           <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
+          <label :title="fieldHint('risk_percent_per_trade')"><span>Risk % per trade</span><input type="number" step="0.1" min="0.1" v-model.number="riskPercentPerTrade" /></label>
           <label :title="fieldHint('risk_budget_r')"><span>Risk Budget (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" :class="{ 'field-missing': pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) }" :placeholder="pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) ? 'Required field' : ''" /></label>
+        </div>
+        <div class="risk-pro-panel">
+          <div class="risk-pro-row"><strong>Account:</strong> {{ formatUsd(accountBaseUsd) }}</div>
+          <div class="risk-pro-row"><strong>Risk per trade:</strong> {{ riskPercentPerTrade.toFixed(2) }}% → 1R = {{ formatUsd(oneRUsd) }}</div>
+          <div class="risk-pro-row"><strong>Risk Budget (R):</strong> {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R → Risk = {{ formatUsd(tradeRiskUsd) }}</div>
+        </div>
+        <div class="journal-form-grid workspace-field-grid">
+          <label :title="fieldHint('account_value')"><span>Account Size (USD)</span><input type="number" min="0" step="100" v-model.number="accountBaseUsd" /></label>
+          <label :title="fieldHint('stop_loss_points')"><span>Stop loss</span><input type="number" min="0" step="0.01" v-model.number="sizingStopLoss" /></label>
+          <label :title="fieldHint('dollar_per_point')"><span>$ per point/contract</span><input type="number" min="0.01" step="0.01" v-model.number="dollarPerPoint" /></label>
+        </div>
+        <div class="muted-copy">
+          Recommended size: <strong>{{ recommendedContracts }}</strong> contracts ·
+          Actual risk: <strong>{{ formatUsd(actualRiskUsd) }}</strong> ({{ actualRiskR.toFixed(2) }}R)
         </div>
       </div>
       <div class="pretrade-module-card">
@@ -547,7 +562,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import TradesVizChart from '../components/TradesVizChart.vue'
 import {
   createDailyReview,
@@ -606,6 +621,10 @@ const sessionOptions = ['premarket', 'open', 'midday', 'close']
 const sessionDropdownOpen = ref(false)
 const watchlistText = ref('')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
+const accountBaseUsd = ref(10000)
+const riskPercentPerTrade = ref(1)
+const sizingStopLoss = ref(0)
+const dollarPerPoint = ref(1)
 const snapshotForms = ref([])
 const expandedSnapshotLogic = ref([])
 const savingPretrade = ref(false)
@@ -682,6 +701,10 @@ const FIELD_HINTS = {
   emotion_level: '1-10分：当前情绪强度，越高表示情绪波动越明显。',
   action_bias: '本次检查后偏向动作（继续持有/减仓/止盈/止损）。',
   risk_budget_r: '当天计划可使用的最大风险预算（R）。',
+  risk_percent_per_trade: '每笔交易默认风险比例（用于将 R 自动换算为美元金额）。',
+  account_value: '账户净值（USD），用于计算 1R 对应金额。',
+  stop_loss_points: '本笔交易止损距离（点数/价格差）。',
+  dollar_per_point: '每 1 点每合约对应的美元风险（例如 MCL 通常约 $100/点/手）。',
   snapshot_symbol: '该 Snapshot 对应的交易标的代码。',
   snapshot_strategy: '该 Setup 的策略名称或方向。',
   snapshot_direction: '计划方向：做多(long)或做空(short)。',
@@ -720,6 +743,11 @@ function formatOpenedAt(value) {
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return String(value)
   return dt.toLocaleString()
+}
+
+function formatUsd(value) {
+  const num = Number(value || 0)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(num)
 }
 
 function isSnapshotMissing(row, key) {
@@ -1243,6 +1271,23 @@ async function saveSnapshot(row) {
 }
 
 const usedRiskR = computed(() => snapshotForms.value.reduce((sum, row) => sum + Number(row.planned_risk_r || 0), 0))
+const oneRUsd = computed(() => {
+  const base = Number(accountBaseUsd.value || 0)
+  const pct = Number(riskPercentPerTrade.value || 0)
+  if (!(base > 0) || !(pct > 0)) return 0
+  return (base * pct) / 100
+})
+const tradeRiskUsd = computed(() => Number(pretradeForm.value.risk_budget_r || 0) * oneRUsd.value)
+const perContractRiskUsd = computed(() => Math.abs(Number(sizingStopLoss.value || 0)) * Number(dollarPerPoint.value || 0))
+const recommendedContracts = computed(() => {
+  if (!(perContractRiskUsd.value > 0)) return 0
+  return Math.max(0, Math.floor(tradeRiskUsd.value / perContractRiskUsd.value))
+})
+const actualRiskUsd = computed(() => recommendedContracts.value * perContractRiskUsd.value)
+const actualRiskR = computed(() => {
+  if (!(oneRUsd.value > 0)) return 0
+  return actualRiskUsd.value / oneRUsd.value
+})
 
 const remainingRiskR = computed(() => {
   const budget = Number(pretradeForm.value.risk_budget_r || 0)
@@ -1414,6 +1459,10 @@ function focusFirstPending() {
 }
 
 onMounted(async () => {
+  accountBaseUsd.value = Number(localStorage.getItem('pretrade-account-usd') || 10000)
+  riskPercentPerTrade.value = Number(localStorage.getItem('pretrade-risk-pct') || 1)
+  sizingStopLoss.value = Number(localStorage.getItem('pretrade-stop-loss') || 0)
+  dollarPerPoint.value = Number(localStorage.getItem('pretrade-dollar-per-point') || 1)
   document.addEventListener('click', handleDocumentClick)
   await loadMetaTags()
   await loadQueue()
@@ -1427,6 +1476,11 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocumentClick)
 })
+
+watch(accountBaseUsd, (v) => localStorage.setItem('pretrade-account-usd', String(Number(v || 0))))
+watch(riskPercentPerTrade, (v) => localStorage.setItem('pretrade-risk-pct', String(Number(v || 0))))
+watch(sizingStopLoss, (v) => localStorage.setItem('pretrade-stop-loss', String(Number(v || 0))))
+watch(dollarPerPoint, (v) => localStorage.setItem('pretrade-dollar-per-point', String(Number(v || 0))))
 </script>
 
 <style scoped>
@@ -1826,6 +1880,20 @@ onBeforeUnmount(() => {
 .risk-progress-fill {
   height: 100%;
   background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+}
+
+.risk-pro-panel {
+  margin-top: 10px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.risk-pro-row {
+  font-size: 13px;
 }
 
 .logic-toggle-row {
