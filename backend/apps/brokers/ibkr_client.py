@@ -2,6 +2,7 @@ import time
 from decimal import Decimal
 from datetime import datetime
 import xml.etree.ElementTree as ET
+from urllib.parse import urljoin
 
 import requests
 from django.conf import settings
@@ -121,3 +122,48 @@ class IBKRClient:
         if value in [None, ""]:
             return Decimal("0")
         return Decimal(str(value).replace(",", ""))
+
+    def search_contracts(self, query: str, sec_type: str | None = None, limit: int = 100) -> list[dict]:
+        base_url = (settings.IBKR_CLIENT_PORTAL_BASE_URL or "").strip()
+        if not base_url:
+            raise ValueError("IBKR_CLIENT_PORTAL_BASE_URL is not configured.")
+        symbol = (query or "").strip()
+        if not symbol:
+            return []
+
+        url = urljoin(base_url.rstrip('/') + '/', 'iserver/secdef/search')
+        headers = {}
+        auth_token = (settings.IBKR_CLIENT_PORTAL_AUTH_TOKEN or "").strip()
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        params = {"symbol": symbol}
+        if sec_type:
+            params["secType"] = sec_type
+
+        response = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=20,
+            verify=settings.IBKR_CLIENT_PORTAL_VERIFY_SSL,
+        )
+        response.raise_for_status()
+        payload = response.json() if response.content else []
+        if not isinstance(payload, list):
+            return []
+
+        rows = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            rows.append({
+                "symbol": (item.get("symbol") or "").strip(),
+                "asset_class": (item.get("secType") or "").strip().upper(),
+                "display_name": (item.get("description") or item.get("name") or "").strip(),
+                "exchange": (item.get("listingExchange") or item.get("exchange") or "").strip(),
+                "conid": item.get("conid"),
+            })
+            if len(rows) >= max(1, int(limit)):
+                break
+        return [row for row in rows if row["symbol"]]

@@ -28,6 +28,7 @@ export const fetchPositionCheckpoints = (params = {}) => api.get('/journal/posit
 export const savePositionCheckpoint = (payload) => api.post('/journal/position-checkpoints/', payload)
 export const fetchPretradePlans = (params = {}) => api.get('/journal/pretrade-plans/', { params })
 export const fetchPretradeAssist = (params = {}) => api.get('/journal/pretrade-plans/assist/', { params })
+export const fetchPretradeInstrumentSearch = (params = {}) => api.get('/journal/pretrade-plans/instrument-search/', { params })
 export const savePretradePlan = (payload) => api.post('/journal/pretrade-plans/', payload)
 export const updatePretradePlan = (id, payload) => api.patch(`/journal/pretrade-plans/${id}/`, payload)
 export const fetchSetupSnapshots = (params = {}) => api.get('/journal/setup-snapshots/', { params })

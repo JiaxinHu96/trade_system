@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from apps.trades.models import RawIBKRExecution
 from apps.trades.models import TradeGroup
+from apps.brokers.ibkr_client import IBKRClient
 from .models import DailyReview, MistakeTag, PositionCheckpoint, PreTradePlan, SetupSnapshot, SetupTag, TradeJournal, TradeReview
 from .serializers import (
     DailyReviewSerializer,
@@ -677,6 +678,51 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
             'recommended_r_rule': 'Tiered by current open exposure: <5k=1R, <25k=2R, <100k=3R, >=100k=4R.',
             'data_source': 'IBKR Flex executions imported by /api/syncs/ibkr/start/ and stored in RawIBKRExecution.',
         })
+
+    @action(detail=False, methods=['get'], url_path='instrument-search')
+    def instrument_search(self, request):
+        query = (request.query_params.get('q') or '').strip()
+        asset_class = (request.query_params.get('asset_class') or '').strip().upper()
+        try:
+            limit = min(200, max(1, int(request.query_params.get('limit') or 50)))
+        except (TypeError, ValueError):
+            limit = 50
+        if not query:
+            return Response({'results': [], 'source': 'none'})
+
+        # Preferred path: IBKR contract/security-definition search (full-universe capable)
+        try:
+            sec_type = asset_class if asset_class in {'FUT', 'STK'} else None
+            rows = IBKRClient().search_contracts(query=query, sec_type=sec_type, limit=limit)
+            return Response({'results': rows, 'source': 'ibkr_contract_master'})
+        except Exception as exc:
+            # Fallback path: local imported executions only
+            raw_qs = RawIBKRExecution.objects.filter(
+                Q(symbol__icontains=query) | Q(local_symbol__icontains=query)
+            ).order_by('-imported_at', '-executed_at', '-id')
+            if asset_class in {'FUT', 'STK'}:
+                raw_qs = raw_qs.filter(sec_type=asset_class)
+            seen = set()
+            results = []
+            for row in raw_qs[:2000]:
+                key = ((row.symbol or '').upper(), (row.sec_type or '').upper())
+                if not key[0] or key in seen:
+                    continue
+                seen.add(key)
+                results.append({
+                    'symbol': key[0],
+                    'asset_class': key[1] or 'UNKNOWN',
+                    'display_name': (row.local_symbol or '').strip(),
+                    'exchange': (row.exchange or '').strip(),
+                    'conid': (row.conid or '').strip(),
+                })
+                if len(results) >= limit:
+                    break
+            return Response({
+                'results': results,
+                'source': 'imported_executions_fallback',
+                'error': str(exc),
+            })
 
 
 class SetupSnapshotViewSet(viewsets.ModelViewSet):

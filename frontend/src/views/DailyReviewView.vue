@@ -568,13 +568,15 @@
       <div class="confirm-modal-card watchlist-modal-card" @click.stop>
         <div class="section-title minor">Select Watchlist</div>
         <div class="muted-copy">Source: IBKR execution imports (auto refresh once per day).</div>
-        <div class="muted-copy">Coverage: imported executions only (not full exchange universe).</div>
+        <div class="muted-copy">Default list = imported executions; typing 2+ chars will query IBKR contract master.</div>
+        <div class="muted-copy" v-if="watchlistSearchText.trim().length >= 2">Search source: {{ watchlistSearchSource }}</div>
         <div class="watchlist-modal-tabs">
           <button type="button" class="secondary small-btn" :class="{ 'tab-active': watchlistModalTab === 'FUT' }" @click="watchlistModalTab = 'FUT'">Futures Codes</button>
           <button type="button" class="secondary small-btn" :class="{ 'tab-active': watchlistModalTab === 'STK' }" @click="watchlistModalTab = 'STK'">Stock Names</button>
           <button type="button" class="secondary small-btn" @click="refreshWatchlistAssist">Refresh</button>
         </div>
         <input v-model="watchlistSearchText" placeholder="Search symbol / name..." />
+        <div class="muted-copy" v-if="watchlistRemoteLoading">Searching IBKR contract master...</div>
         <div class="watchlist-modal-list">
           <label v-for="item in watchlistModalOptions" :key="`watch-modal-${item.symbol}-${item.asset_class}`" class="watchlist-modal-option">
             <input type="checkbox" :checked="watchlistDraftSelection.includes(item.symbol)" @change="toggleWatchlistDraft(item.symbol)" />
@@ -600,6 +602,7 @@ import {
   fetchMistakeTags,
   fetchPretradePlans,
   fetchPretradeAssist,
+  fetchPretradeInstrumentSearch,
   fetchReviewQueue,
   fetchSetupSnapshots,
   fetchSetupTags,
@@ -656,6 +659,9 @@ const watchlistDraftSelection = ref([])
 const watchlistModalVisible = ref(false)
 const watchlistModalTab = ref('FUT')
 const watchlistSearchText = ref('')
+const watchlistRemoteOptions = ref([])
+const watchlistRemoteLoading = ref(false)
+const watchlistSearchSource = ref('imported_executions')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
 const expandedSnapshotLogic = ref([])
@@ -871,7 +877,9 @@ const selectedSessionLabel = computed(() => {
 })
 const watchlistModalOptions = computed(() => {
   const keyword = (watchlistSearchText.value || '').trim().toLowerCase()
-  return (pretradeAssist.value.symbol_catalog || []).filter((item) => {
+  const useRemote = keyword.length >= 2
+  const source = useRemote ? (watchlistRemoteOptions.value || []) : (pretradeAssist.value.symbol_catalog || [])
+  return source.filter((item) => {
     const matchAsset = (item.asset_class || '').toUpperCase() === watchlistModalTab.value
     const matchKeyword = !keyword
       || String(item.symbol || '').toLowerCase().includes(keyword)
@@ -1027,6 +1035,27 @@ async function refreshWatchlistAssist() {
   await loadPretradeAssist()
 }
 
+async function runWatchlistRemoteSearch() {
+  const keyword = (watchlistSearchText.value || '').trim()
+  if (keyword.length < 2) {
+    watchlistRemoteOptions.value = []
+    watchlistSearchSource.value = 'imported_executions'
+    return
+  }
+  watchlistRemoteLoading.value = true
+  try {
+    const res = await fetchPretradeInstrumentSearch({
+      q: keyword,
+      asset_class: watchlistModalTab.value,
+      limit: 100,
+    })
+    watchlistRemoteOptions.value = res.data?.results || []
+    watchlistSearchSource.value = res.data?.source || 'imported_executions'
+  } finally {
+    watchlistRemoteLoading.value = false
+  }
+}
+
 async function ensureDailyWatchlistRefresh() {
   const today = new Date().toISOString().slice(0, 10)
   const key = 'pretrade_watchlist_last_refresh_date'
@@ -1039,6 +1068,9 @@ async function ensureDailyWatchlistRefresh() {
 
 function openWatchlistModal() {
   watchlistDraftSelection.value = [...watchlistSelection.value]
+  watchlistSearchText.value = ''
+  watchlistRemoteOptions.value = []
+  watchlistSearchSource.value = 'imported_executions'
   watchlistModalVisible.value = true
 }
 
@@ -1537,6 +1569,17 @@ watch(watchlistSelection, (nextList) => {
   })
 })
 
+let searchTimer = null
+watch([watchlistSearchText, watchlistModalTab], () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    runWatchlistRemoteSearch().catch(() => {
+      watchlistRemoteOptions.value = []
+      watchlistSearchSource.value = 'imported_executions'
+    })
+  }, 250)
+})
+
 onMounted(async () => {
   document.addEventListener('click', handleDocumentClick)
   await loadMetaTags()
@@ -1550,6 +1593,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocumentClick)
+  if (searchTimer) clearTimeout(searchTimer)
 })
 </script>
 

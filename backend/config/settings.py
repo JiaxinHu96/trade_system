@@ -18,6 +18,9 @@ IBKR_FLEX_GET_STATEMENT_URL = (
     "https://gdcdyn.interactivebrokers.com/Universal/servlet/"
     "FlexStatementService.GetStatement"
 )
+IBKR_CLIENT_PORTAL_BASE_URL = os.environ.get("IBKR_CLIENT_PORTAL_BASE_URL", "")
+IBKR_CLIENT_PORTAL_AUTH_TOKEN = os.environ.get("IBKR_CLIENT_PORTAL_AUTH_TOKEN", "")
+IBKR_CLIENT_PORTAL_VERIFY_SSL = os.environ.get("IBKR_CLIENT_PORTAL_VERIFY_SSL", "1") == "1"
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-secret-key')
 DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
