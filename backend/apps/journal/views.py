@@ -644,6 +644,8 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
                 latest_imported_at = row.imported_at
 
         symbol_catalog = sorted(catalog_map.values(), key=lambda x: (x['asset_class'], x['symbol']))
+        futures_catalog = [item for item in symbol_catalog if item['asset_class'] == 'FUT']
+        stocks_catalog = [item for item in symbol_catalog if item['asset_class'] == 'STK']
 
         open_groups = TradeGroup.objects.filter(status='open')
         open_exposure = Decimal('0')
@@ -663,11 +665,14 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
 
         return Response({
             'symbol_catalog': symbol_catalog,
+            'futures_catalog': futures_catalog,
+            'stocks_catalog': stocks_catalog,
             'catalog_size': len(symbol_catalog),
             'catalog_updated_at': latest_imported_at,
             'account_capital_estimate': round(float(open_exposure), 2),
             'recommended_r_budget': float(recommended_r),
             'recommended_r_rule': 'Tiered by current open exposure: <5k=1R, <25k=2R, <100k=3R, >=100k=4R.',
+            'data_source': 'IBKR Flex executions imported by /api/syncs/ibkr/start/ and stored in RawIBKRExecution.',
         })
 
 

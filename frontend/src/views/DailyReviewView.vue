@@ -237,16 +237,11 @@
           <label :title="fieldHint('market_regime')"><span>Market Regime <span class="required-asterisk">*</span></span><input v-model="pretradeForm.market_regime" :class="{ 'field-missing': pretradeSubmitAttempted && !pretradeForm.market_regime }" :placeholder="pretradeSubmitAttempted && !pretradeForm.market_regime ? 'Required field' : ''" /></label>
           <label :title="fieldHint('watchlist')">
             <span>Watchlist</span>
-            <select v-model="watchlistAssetFilter">
-              <option value="">All Types</option>
-              <option v-for="item in watchlistAssetOptions" :key="`asset-${item}`" :value="item">{{ item }}</option>
-            </select>
-            <input v-model="watchlistSearchText" placeholder="Search symbol..." />
-            <select multiple class="watchlist-multiselect" v-model="watchlistSelection">
-              <option v-for="item in filteredCatalogOptions" :key="`wl-${item.symbol}-${item.asset_class}`" :value="item.symbol">
-                {{ item.symbol }} ({{ item.asset_class }}){{ item.display_name ? ` - ${item.display_name}` : '' }}
-              </option>
-            </select>
+            <button type="button" class="secondary" @click="openWatchlistModal">Choose Watchlist</button>
+            <div class="muted-copy">Selected: {{ watchlistSelection.length }} symbol(s)</div>
+            <div class="chip-wrap" v-if="watchlistSelection.length">
+              <span v-for="symbol in watchlistSelection" :key="`watch-chip-${symbol}`" class="badge">{{ symbol }}</span>
+            </div>
           </label>
           <label :title="fieldHint('risk_budget_r')">
             <span>Risk Budget (R) <span class="required-asterisk">*</span></span>
@@ -568,6 +563,30 @@
         </div>
       </div>
     </div>
+
+    <div v-if="watchlistModalVisible" class="confirm-modal-mask" @click="closeWatchlistModal(false)">
+      <div class="confirm-modal-card watchlist-modal-card" @click.stop>
+        <div class="section-title minor">Select Watchlist</div>
+        <div class="muted-copy">Source: IBKR execution imports (auto refresh once per day).</div>
+        <div class="watchlist-modal-tabs">
+          <button type="button" class="secondary small-btn" :class="{ 'tab-active': watchlistModalTab === 'FUT' }" @click="watchlistModalTab = 'FUT'">Futures Codes</button>
+          <button type="button" class="secondary small-btn" :class="{ 'tab-active': watchlistModalTab === 'STK' }" @click="watchlistModalTab = 'STK'">Stock Names</button>
+          <button type="button" class="secondary small-btn" @click="refreshWatchlistAssist">Refresh</button>
+        </div>
+        <input v-model="watchlistSearchText" placeholder="Search symbol / name..." />
+        <div class="watchlist-modal-list">
+          <label v-for="item in watchlistModalOptions" :key="`watch-modal-${item.symbol}-${item.asset_class}`" class="watchlist-modal-option">
+            <input type="checkbox" :checked="watchlistDraftSelection.includes(item.symbol)" @change="toggleWatchlistDraft(item.symbol)" />
+            <span v-if="watchlistModalTab === 'FUT'">{{ item.symbol }} <span class="muted-copy">{{ item.display_name || '' }}</span></span>
+            <span v-else>{{ item.display_name || item.symbol }} <span class="muted-copy">({{ item.symbol }})</span></span>
+          </label>
+        </div>
+        <div class="filter-action-row">
+          <button class="secondary" @click="closeWatchlistModal(false)">Cancel</button>
+          <button @click="closeWatchlistModal(true)">Apply</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -632,8 +651,10 @@ const sessionOptions = ['premarket', 'open', 'midday', 'close']
 const sessionDropdownOpen = ref(false)
 const pretradeAssist = ref({ symbol_catalog: [], recommended_r_budget: null, account_capital_estimate: null })
 const watchlistSelection = ref([])
+const watchlistDraftSelection = ref([])
+const watchlistModalVisible = ref(false)
+const watchlistModalTab = ref('FUT')
 const watchlistSearchText = ref('')
-const watchlistAssetFilter = ref('')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
 const expandedSnapshotLogic = ref([])
@@ -847,15 +868,10 @@ const selectedSessionLabel = computed(() => {
   if (!pretradeSessions.value.length) return 'Select sessions'
   return pretradeSessions.value.join(', ')
 })
-const watchlistAssetOptions = computed(() => {
-  const values = new Set((pretradeAssist.value.symbol_catalog || []).map((item) => item.asset_class).filter(Boolean))
-  return Array.from(values).sort()
-})
-const filteredCatalogOptions = computed(() => {
+const watchlistModalOptions = computed(() => {
   const keyword = (watchlistSearchText.value || '').trim().toLowerCase()
-  const asset = (watchlistAssetFilter.value || '').trim()
   return (pretradeAssist.value.symbol_catalog || []).filter((item) => {
-    const matchAsset = !asset || item.asset_class === asset
+    const matchAsset = (item.asset_class || '').toUpperCase() === watchlistModalTab.value
     const matchKeyword = !keyword
       || String(item.symbol || '').toLowerCase().includes(keyword)
       || String(item.display_name || '').toLowerCase().includes(keyword)
@@ -1004,6 +1020,40 @@ async function loadMetaTags() {
 async function loadPretradeAssist() {
   const res = await fetchPretradeAssist()
   pretradeAssist.value = res.data || { symbol_catalog: [], recommended_r_budget: null, account_capital_estimate: null }
+}
+
+async function refreshWatchlistAssist() {
+  await loadPretradeAssist()
+}
+
+async function ensureDailyWatchlistRefresh() {
+  const today = new Date().toISOString().slice(0, 10)
+  const key = 'pretrade_watchlist_last_refresh_date'
+  const last = localStorage.getItem(key)
+  if (last !== today || !(pretradeAssist.value.symbol_catalog || []).length) {
+    await loadPretradeAssist()
+    localStorage.setItem(key, today)
+  }
+}
+
+function openWatchlistModal() {
+  watchlistDraftSelection.value = [...watchlistSelection.value]
+  watchlistModalVisible.value = true
+}
+
+function closeWatchlistModal(apply = false) {
+  if (apply) {
+    watchlistSelection.value = [...watchlistDraftSelection.value]
+  }
+  watchlistModalVisible.value = false
+}
+
+function toggleWatchlistDraft(symbol) {
+  const normalized = String(symbol || '').trim().toUpperCase()
+  const set = new Set(watchlistDraftSelection.value || [])
+  if (set.has(normalized)) set.delete(normalized)
+  else set.add(normalized)
+  watchlistDraftSelection.value = Array.from(set)
 }
 
 async function loadQueue() {
@@ -1175,7 +1225,7 @@ function applySuggestedRiskBudget() {
 }
 
 async function loadPretrade() {
-  await loadPretradeAssist()
+  await ensureDailyWatchlistRefresh()
   const res = await fetchPretradePlans({ date: pretradeDate.value, page_size: 1 })
   const existing = (res.data?.results || res.data || [])[0]
   if (existing) {
@@ -2085,8 +2135,35 @@ onBeforeUnmount(() => {
   align-items: end;
 }
 
-.watchlist-multiselect {
-  min-height: 120px;
+.watchlist-modal-card {
+  width: min(760px, 92vw);
+}
+
+.watchlist-modal-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.tab-active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.watchlist-modal-list {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 8px;
+  margin-top: 8px;
+}
+
+.watchlist-modal-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
 }
 
 @media (max-width: 900px) {
