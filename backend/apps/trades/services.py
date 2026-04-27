@@ -64,6 +64,22 @@ def _group_signature(
     )
 
 
+def _group_lifecycle_key(*, symbol, asset_class, direction, opened_at, closed_at):
+    """
+    Lifecycle identity for strategy-style trade groups.
+
+    This intentionally excludes PnL/qty aggregates so we can keep stable TradeGroup
+    ids (and attached reviews/journal data) even when calculation logic evolves.
+    """
+    return (
+        symbol or '',
+        asset_class or '',
+        (direction or '').lower(),
+        opened_at,
+        closed_at,
+    )
+
+
 def _sign(value: Decimal) -> int:
     if value > ZERO:
         return 1
@@ -252,7 +268,17 @@ def rebuild_all_trade_groups():
 
     existing_groups = list(TradeGroup.objects.all().order_by('id'))
     existing_by_signature = defaultdict(list)
+    existing_by_lifecycle = defaultdict(list)
     for group in existing_groups:
+        lifecycle_key = _group_lifecycle_key(
+            symbol=group.symbol,
+            asset_class=group.asset_class,
+            direction=group.direction,
+            opened_at=group.opened_at,
+            closed_at=group.closed_at,
+        )
+        existing_by_lifecycle[lifecycle_key].append(group)
+
         signature = _group_signature(
             symbol=group.symbol,
             asset_class=group.asset_class,
@@ -375,7 +401,16 @@ def rebuild_all_trade_groups():
             opened_at=bucket['opened_at'],
             closed_at=bucket['closed_at'],
         )
-        candidates = existing_by_signature.get(signature) or []
+        lifecycle_key = _group_lifecycle_key(
+            symbol=bucket['symbol'],
+            asset_class=bucket['asset_class'],
+            direction=bucket['direction'],
+            opened_at=bucket['opened_at'],
+            closed_at=bucket['closed_at'],
+        )
+        candidates = existing_by_lifecycle.get(lifecycle_key) or []
+        if not candidates:
+            candidates = existing_by_signature.get(signature) or []
         group = candidates.pop(0) if candidates else None
         payload = {
             'symbol': bucket['symbol'],
@@ -425,4 +460,27 @@ def rebuild_all_trade_groups():
 
     stale_group_ids = [group.id for group in existing_groups if group.id not in retained_group_ids]
     if stale_group_ids:
-        TradeGroup.objects.filter(id__in=stale_group_ids).delete()
+        stale_groups = list(
+            TradeGroup.objects.filter(id__in=stale_group_ids).prefetch_related(
+                'daily_reviews',
+                'daily_review_links',
+                'position_checkpoints',
+            )
+        )
+        deletable_ids = []
+        for group in stale_groups:
+            has_user_links = any(
+                [
+                    hasattr(group, 'journal'),
+                    hasattr(group, 'trade_review'),
+                    hasattr(group, 'pretrade_snapshot'),
+                    group.daily_reviews.exists(),
+                    group.daily_review_links.exists(),
+                    group.position_checkpoints.exists(),
+                ]
+            )
+            if not has_user_links:
+                deletable_ids.append(group.id)
+
+        if deletable_ids:
+            TradeGroup.objects.filter(id__in=deletable_ids).delete()
