@@ -568,6 +568,7 @@
       <div class="confirm-modal-card watchlist-modal-card" @click.stop>
         <div class="section-title minor">Select Watchlist</div>
         <div class="muted-copy">Source: IBKR execution imports (auto refresh once per day).</div>
+        <div class="muted-copy">Coverage: imported executions only (not full exchange universe).</div>
         <div class="watchlist-modal-tabs">
           <button type="button" class="secondary small-btn" :class="{ 'tab-active': watchlistModalTab === 'FUT' }" @click="watchlistModalTab = 'FUT'">Futures Codes</button>
           <button type="button" class="secondary small-btn" :class="{ 'tab-active': watchlistModalTab === 'STK' }" @click="watchlistModalTab = 'STK'">Stock Names</button>
