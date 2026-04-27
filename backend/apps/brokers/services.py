@@ -1,7 +1,7 @@
 from django.db import IntegrityError, transaction
 
 from apps.syncs.models import SyncJob
-from apps.trades.models import RawIBKRExecution
+from apps.trades.models import RawIBKRExecution, TradeGroup
 from apps.trades.services import create_fill_from_raw, rebuild_trade_groups_for_dates
 from decimal import Decimal
 
@@ -43,7 +43,48 @@ class IBKRSyncService:
             "raw_payload": row.get("raw_payload", {})
         }
 
+    def _build_pre_sync_snapshot(self) -> dict:
+        groups = TradeGroup.all_objects.all().order_by('id')
+        protected_groups = []
+        for group in groups:
+            has_user_content = any(
+                [
+                    hasattr(group, 'journal'),
+                    hasattr(group, 'trade_review'),
+                    hasattr(group, 'pretrade_snapshot'),
+                    group.daily_reviews.exists(),
+                    group.daily_review_links.exists(),
+                    group.position_checkpoints.exists(),
+                ]
+            )
+            if not has_user_content:
+                continue
+            protected_groups.append(
+                {
+                    'id': group.id,
+                    'symbol': group.symbol,
+                    'asset_class': group.asset_class,
+                    'direction': group.direction,
+                    'opened_at': group.opened_at.isoformat() if group.opened_at else None,
+                    'closed_at': group.closed_at.isoformat() if group.closed_at else None,
+                    'status': group.status,
+                }
+            )
+
+        return {
+            'total_trade_groups': groups.count(),
+            'protected_trade_groups': len(protected_groups),
+            'protected_examples': protected_groups[:50],
+        }
+
     def run_full_sync(self, sync_job: SyncJob):
+        pre_sync_snapshot = self._build_pre_sync_snapshot()
+        sync_job.metadata = {
+            **(sync_job.metadata or {}),
+            'pre_sync_tradegroup_snapshot': pre_sync_snapshot,
+        }
+        sync_job.save(update_fields=['metadata', 'updated_at'])
+
         rows = self.client.fetch_all_executions()
         sync_job.raw_count = len(rows)
         sync_job.save(update_fields=['raw_count', 'updated_at'])

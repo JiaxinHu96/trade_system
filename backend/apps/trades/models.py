@@ -1,6 +1,11 @@
 from django.db import models
 
 
+class ActiveTradeGroupManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(is_soft_deleted=False)
+
+
 class RawIBKRExecution(models.Model):
     sync_job = models.ForeignKey('syncs.SyncJob', on_delete=models.SET_NULL, null=True, blank=True)
     broker = models.CharField(max_length=20, default='ibkr')
@@ -78,8 +83,14 @@ class TradeGroup(models.Model):
     commission_total = models.DecimalField(max_digits=20, decimal_places=8, default=0)
     opened_at = models.DateTimeField(blank=True, null=True)
     closed_at = models.DateTimeField(blank=True, null=True)
+    is_soft_deleted = models.BooleanField(default=False, db_index=True)
+    soft_deleted_at = models.DateTimeField(blank=True, null=True)
+    soft_delete_reason = models.CharField(max_length=128, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ActiveTradeGroupManager()
+    all_objects = models.Manager()
 
     class Meta:
         ordering = ['-trade_date', '-id']
