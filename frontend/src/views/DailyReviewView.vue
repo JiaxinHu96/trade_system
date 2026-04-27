@@ -235,8 +235,27 @@
             </div>
           </label>
           <label :title="fieldHint('market_regime')"><span>Market Regime <span class="required-asterisk">*</span></span><input v-model="pretradeForm.market_regime" :class="{ 'field-missing': pretradeSubmitAttempted && !pretradeForm.market_regime }" :placeholder="pretradeSubmitAttempted && !pretradeForm.market_regime ? 'Required field' : ''" /></label>
-          <label :title="fieldHint('watchlist')"><span>Watchlist (comma-separated)</span><input v-model="watchlistText" placeholder="AAPL, NVDA, TSLA" /></label>
-          <label :title="fieldHint('risk_budget_r')"><span>Risk Budget (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" :class="{ 'field-missing': pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) }" :placeholder="pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('watchlist')">
+            <span>Watchlist</span>
+            <select v-model="watchlistAssetFilter">
+              <option value="">All Types</option>
+              <option v-for="item in watchlistAssetOptions" :key="`asset-${item}`" :value="item">{{ item }}</option>
+            </select>
+            <input v-model="watchlistSearchText" placeholder="Search symbol..." />
+            <select multiple class="watchlist-multiselect" v-model="watchlistSelection">
+              <option v-for="item in filteredCatalogOptions" :key="`wl-${item.symbol}-${item.asset_class}`" :value="item.symbol">
+                {{ item.symbol }} ({{ item.asset_class }}){{ item.display_name ? ` - ${item.display_name}` : '' }}
+              </option>
+            </select>
+          </label>
+          <label :title="fieldHint('risk_budget_r')">
+            <span>Risk Budget (R) <span class="required-asterisk">*</span></span>
+            <input type="number" step="0.1" v-model.number="pretradeForm.risk_budget_r" :class="{ 'field-missing': pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) }" :placeholder="pretradeSubmitAttempted && !(Number(pretradeForm.risk_budget_r) > 0) ? 'Required field' : ''" />
+            <div class="muted-copy" v-if="pretradeAssist.recommended_r_budget">
+              Suggested: {{ pretradeAssist.recommended_r_budget }}R (Capital est. {{ pretradeAssist.account_capital_estimate || 0 }})
+              <button type="button" class="secondary small-btn" @click="applySuggestedRiskBudget">Use</button>
+            </div>
+          </label>
         </div>
       </div>
       <div class="pretrade-module-card">
@@ -276,7 +295,13 @@
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
         <div class="section-title minor">Basic</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label :title="fieldHint('snapshot_symbol')"><span>Symbol <span class="required-asterisk">*</span></span><input v-model="row.symbol" :class="{ 'field-missing': isSnapshotMissing(row, 'symbol') }" :placeholder="isSnapshotMissing(row, 'symbol') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_symbol')">
+            <span>Symbol <span class="required-asterisk">*</span></span>
+            <select v-model="row.symbol" :class="{ 'field-missing': isSnapshotMissing(row, 'symbol') }">
+              <option value="" disabled>Select from Watchlist</option>
+              <option v-for="item in snapshotSymbolOptions" :key="`snap-opt-${item}`" :value="item">{{ item }}</option>
+            </select>
+          </label>
           <label :title="fieldHint('snapshot_strategy')"><span>Strategy <span class="required-asterisk">*</span></span><input v-model="row.strategy" :class="{ 'field-missing': isSnapshotMissing(row, 'strategy') }" :placeholder="isSnapshotMissing(row, 'strategy') ? 'Required field' : ''" /></label>
           <label :title="fieldHint('snapshot_direction')"><span>Direction <span class="required-asterisk">*</span></span><select v-model="row.direction" :class="{ 'field-missing': isSnapshotMissing(row, 'direction') }"><option value="long">long</option><option value="short">short</option></select></label>
         </div>
@@ -547,13 +572,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import TradesVizChart from '../components/TradesVizChart.vue'
 import {
   createDailyReview,
   fetchDailyReviews,
   fetchMistakeTags,
   fetchPretradePlans,
+  fetchPretradeAssist,
   fetchReviewQueue,
   fetchSetupSnapshots,
   fetchSetupTags,
@@ -604,7 +630,10 @@ const pretradeForm = ref({ id: null, plan_date: pretradeDate.value, session: 'pr
 const pretradeSessions = ref(['premarket'])
 const sessionOptions = ['premarket', 'open', 'midday', 'close']
 const sessionDropdownOpen = ref(false)
-const watchlistText = ref('')
+const pretradeAssist = ref({ symbol_catalog: [], recommended_r_budget: null, account_capital_estimate: null })
+const watchlistSelection = ref([])
+const watchlistSearchText = ref('')
+const watchlistAssetFilter = ref('')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
 const expandedSnapshotLogic = ref([])
@@ -818,6 +847,25 @@ const selectedSessionLabel = computed(() => {
   if (!pretradeSessions.value.length) return 'Select sessions'
   return pretradeSessions.value.join(', ')
 })
+const watchlistAssetOptions = computed(() => {
+  const values = new Set((pretradeAssist.value.symbol_catalog || []).map((item) => item.asset_class).filter(Boolean))
+  return Array.from(values).sort()
+})
+const filteredCatalogOptions = computed(() => {
+  const keyword = (watchlistSearchText.value || '').trim().toLowerCase()
+  const asset = (watchlistAssetFilter.value || '').trim()
+  return (pretradeAssist.value.symbol_catalog || []).filter((item) => {
+    const matchAsset = !asset || item.asset_class === asset
+    const matchKeyword = !keyword
+      || String(item.symbol || '').toLowerCase().includes(keyword)
+      || String(item.display_name || '').toLowerCase().includes(keyword)
+    return matchAsset && matchKeyword
+  })
+})
+const snapshotSymbolOptions = computed(() => {
+  const values = new Set((watchlistSelection.value || []).filter(Boolean).map((v) => String(v).trim().toUpperCase()))
+  return Array.from(values)
+})
 
 const filteredTimeline = computed(() => {
   return (dailyTimeline.value || []).filter((item) => {
@@ -951,6 +999,11 @@ async function loadMetaTags() {
   const [setupRes, mistakeRes] = await Promise.all([fetchSetupTags(), fetchMistakeTags()])
   setupTags.value = setupRes.data?.results || setupRes.data || []
   mistakeTags.value = mistakeRes.data?.results || mistakeRes.data || []
+}
+
+async function loadPretradeAssist() {
+  const res = await fetchPretradeAssist()
+  pretradeAssist.value = res.data || { symbol_catalog: [], recommended_r_budget: null, account_capital_estimate: null }
 }
 
 async function loadQueue() {
@@ -1090,12 +1143,13 @@ function normalizeScore(value) {
 }
 
 function buildLocalSnapshot(item = {}) {
+  const defaultWatchSymbol = (watchlistSelection.value || [])[0] || ''
   return {
     local_id: item.id || `${Date.now()}-${Math.random()}`,
     id: item.id || null,
     pretrade_plan: item.pretrade_plan || pretradeForm.value.id,
     trade_group: item.trade_group || null,
-    symbol: item.symbol || '',
+    symbol: item.symbol ? String(item.symbol).toUpperCase() : defaultWatchSymbol,
     strategy: item.strategy || '',
     direction: item.direction || 'long',
     setup_type: item.setup_type || 'breakout',
@@ -1115,14 +1169,20 @@ function buildLocalSnapshot(item = {}) {
   }
 }
 
+function applySuggestedRiskBudget() {
+  const suggested = Number(pretradeAssist.value.recommended_r_budget || 0)
+  if (suggested > 0) pretradeForm.value.risk_budget_r = suggested
+}
+
 async function loadPretrade() {
+  await loadPretradeAssist()
   const res = await fetchPretradePlans({ date: pretradeDate.value, page_size: 1 })
   const existing = (res.data?.results || res.data || [])[0]
   if (existing) {
     pretradeForm.value = { ...existing }
     pretradeSessions.value = (existing.session || 'premarket').split(',').map((v) => v.trim()).filter(Boolean)
     if (!pretradeSessions.value.length) pretradeSessions.value = ['premarket']
-    watchlistText.value = (existing.watchlist || []).join(', ')
+    watchlistSelection.value = (existing.watchlist || []).map((v) => String(v).trim().toUpperCase()).filter(Boolean)
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false, ...(existing.pre_trade_checklist || {}) }
     const snaps = await fetchSetupSnapshots({ pretrade_plan: existing.id, page_size: 50 })
     snapshotForms.value = (snaps.data?.results || snaps.data || []).map((item) => buildLocalSnapshot(item))
@@ -1130,7 +1190,7 @@ async function loadPretrade() {
   } else {
     pretradeForm.value = { id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' }
     pretradeSessions.value = ['premarket']
-    watchlistText.value = ''
+    watchlistSelection.value = []
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false }
     snapshotForms.value = [buildLocalSnapshot()]
     expandedSnapshotLogic.value = []
@@ -1168,7 +1228,7 @@ async function savePretrade(withConfirm = true) {
       ...pretradeForm.value,
       session: (pretradeSessions.value || []).join(','),
       plan_date: pretradeDate.value,
-      watchlist: watchlistText.value.split(',').map((v) => v.trim()).filter(Boolean),
+      watchlist: (watchlistSelection.value || []).map((v) => String(v).trim().toUpperCase()).filter(Boolean),
       pre_trade_checklist: { ...pretradeChecklist.value },
     }
     const res = pretradeForm.value.id ? await updatePretradePlan(pretradeForm.value.id, payload) : await savePretradePlan(payload)
@@ -1227,8 +1287,8 @@ async function saveSnapshot(row) {
     snapshotErrors.value[row.local_id] = `Planned risk would exceed budget (${nextUsed.toFixed(2)}R / ${budget.toFixed(2)}R).`
     return
   }
-  if (!row.strategy || row.planned_entry == null || row.planned_stop == null || row.planned_target == null) {
-    snapshotErrors.value[row.local_id] = 'Strategy, planned entry, stop, target, and planned risk are required.'
+  if (!row.symbol || !row.strategy || row.planned_entry == null || row.planned_stop == null || row.planned_target == null) {
+    snapshotErrors.value[row.local_id] = 'Symbol, strategy, planned entry, stop, target, and planned risk are required.'
     return
   }
   savingSnapshotId.value = row.local_id
@@ -1412,6 +1472,19 @@ function focusFirstPending() {
   }
   positionSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
+
+watch(watchlistSelection, (nextList) => {
+  const allowed = new Set((nextList || []).map((v) => String(v).trim().toUpperCase()).filter(Boolean))
+  if (!allowed.size) {
+    snapshotForms.value = snapshotForms.value.map((row) => ({ ...row, symbol: '' }))
+    return
+  }
+  snapshotForms.value = snapshotForms.value.map((row) => {
+    const symbol = String(row.symbol || '').toUpperCase()
+    if (allowed.has(symbol)) return row
+    return { ...row, symbol: Array.from(allowed)[0] || '' }
+  })
+})
 
 onMounted(async () => {
   document.addEventListener('click', handleDocumentClick)
@@ -2010,6 +2083,10 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(auto-fit, minmax(200px, 260px));
   gap: 10px 12px;
   align-items: end;
+}
+
+.watchlist-multiselect {
+  min-height: 120px;
 }
 
 @media (max-width: 900px) {

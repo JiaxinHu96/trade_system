@@ -615,6 +615,61 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
             qs = qs.filter(session=session)
         return qs
 
+    @action(detail=False, methods=['get'], url_path='assist')
+    def assist(self, request):
+        """
+        Provide helper data for the Pre-Trade UI:
+        - symbol catalog grouped by asset class (from imported broker executions)
+        - account capital estimate (from current open positions exposure)
+        - recommended daily risk budget (R) based on exposure tiers
+        """
+        latest_rows = RawIBKRExecution.objects.all().order_by('-imported_at', '-executed_at', '-id')[:5000]
+        catalog_map = {}
+        latest_imported_at = None
+        for row in latest_rows:
+            symbol = (row.symbol or '').strip()
+            if not symbol:
+                continue
+            asset_class = (row.sec_type or '').strip() or 'UNKNOWN'
+            key = (symbol.upper(), asset_class.upper())
+            if key in catalog_map:
+                continue
+            catalog_map[key] = {
+                'symbol': symbol.upper(),
+                'asset_class': asset_class.upper(),
+                'exchange': (row.exchange or '').strip(),
+                'display_name': (row.local_symbol or '').strip(),
+            }
+            if latest_imported_at is None and row.imported_at:
+                latest_imported_at = row.imported_at
+
+        symbol_catalog = sorted(catalog_map.values(), key=lambda x: (x['asset_class'], x['symbol']))
+
+        open_groups = TradeGroup.objects.filter(status='open')
+        open_exposure = Decimal('0')
+        for group in open_groups:
+            qty = abs(Decimal(str(group.open_qty or 0)))
+            avg_cost = abs(Decimal(str(group.avg_open_cost or 0)))
+            open_exposure += (qty * avg_cost)
+
+        if open_exposure < Decimal('5000'):
+            recommended_r = Decimal('1.0')
+        elif open_exposure < Decimal('25000'):
+            recommended_r = Decimal('2.0')
+        elif open_exposure < Decimal('100000'):
+            recommended_r = Decimal('3.0')
+        else:
+            recommended_r = Decimal('4.0')
+
+        return Response({
+            'symbol_catalog': symbol_catalog,
+            'catalog_size': len(symbol_catalog),
+            'catalog_updated_at': latest_imported_at,
+            'account_capital_estimate': round(float(open_exposure), 2),
+            'recommended_r_budget': float(recommended_r),
+            'recommended_r_rule': 'Tiered by current open exposure: <5k=1R, <25k=2R, <100k=3R, >=100k=4R.',
+        })
+
 
 class SetupSnapshotViewSet(viewsets.ModelViewSet):
     queryset = SetupSnapshot.objects.select_related('pretrade_plan', 'setup', 'trade_group').all().order_by('-updated_at', '-id')
