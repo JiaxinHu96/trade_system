@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.db import connection
 from django.db.utils import ProgrammingError
+from django.db.models import Q
 from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot, TradeMatchedLot
 from apps.journal.models import DailyReview
 
@@ -74,7 +75,26 @@ class TradeGroupSerializer(serializers.ModelSerializer):
         if not _trade_matched_lot_table_exists():
             self.fields.pop('matched_lots', None)
 
+    def _matched_lots_for_group(self, obj):
+        if not _trade_matched_lot_table_exists():
+            return []
+        try:
+            return list(obj.matched_lots.all())
+        except ProgrammingError:
+            return []
+
     def _group_executions_queryset(self, obj):
+        matched_lots = self._matched_lots_for_group(obj)
+        if matched_lots:
+            lot_query = Q()
+            for lot in matched_lots:
+                lot_side = (lot.side or '').upper()
+                open_side = 'SELL' if lot_side == 'SHORT' else 'BUY'
+                close_side = 'BUY' if lot_side == 'SHORT' else 'SELL'
+                lot_query |= Q(symbol=obj.symbol, executed_at=lot.opened_at, side=open_side, price=lot.open_price)
+                lot_query |= Q(symbol=obj.symbol, executed_at=lot.closed_at, side=close_side, price=lot.close_price)
+            return RawIBKRExecution.objects.filter(lot_query).order_by('executed_at', 'id')
+
         qs = RawIBKRExecution.objects.filter(symbol=obj.symbol)
         if obj.opened_at:
             qs = qs.filter(executed_at__gte=obj.opened_at)
@@ -83,6 +103,17 @@ class TradeGroupSerializer(serializers.ModelSerializer):
         return qs.order_by('executed_at', 'id')
 
     def _group_fills_queryset(self, obj):
+        matched_lots = self._matched_lots_for_group(obj)
+        if matched_lots:
+            lot_query = Q()
+            for lot in matched_lots:
+                lot_side = (lot.side or '').upper()
+                open_side = 'SELL' if lot_side == 'SHORT' else 'BUY'
+                close_side = 'BUY' if lot_side == 'SHORT' else 'SELL'
+                lot_query |= Q(symbol=obj.symbol, executed_at=lot.opened_at, side=open_side, price=lot.open_price)
+                lot_query |= Q(symbol=obj.symbol, executed_at=lot.closed_at, side=close_side, price=lot.close_price)
+            return TradeFill.objects.filter(lot_query).order_by('executed_at', 'id')
+
         qs = TradeFill.objects.filter(symbol=obj.symbol)
         if obj.opened_at:
             qs = qs.filter(executed_at__gte=obj.opened_at)

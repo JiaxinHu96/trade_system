@@ -164,6 +164,9 @@ def rebuild_all_trade_groups():
                     buy_notional = matched_qty * open_price
                     sell_notional = matched_qty * close_price
 
+                opened_at = closed_lot.get('opened_at') or fill.executed_at
+                closed_at = fill.executed_at
+                commission_total = _to_decimal(closed_lot.get('entry_commission')) + _to_decimal(closed_lot.get('exit_commission'))
                 trade_buckets.append(
                     {
                         'symbol': symbol,
@@ -176,13 +179,26 @@ def rebuild_all_trade_groups():
                         'avg_open_cost': None,
                         'open_qty': ZERO,
                         'realized_pnl': realized_piece,
-                        'commission_total': _to_decimal(closed_lot.get('entry_commission')) + _to_decimal(closed_lot.get('exit_commission')),
-                        'opened_at': closed_lot.get('opened_at') or fill.executed_at,
-                        'closed_at': fill.executed_at,
-                        'last_fill_at': fill.executed_at,
+                        'commission_total': commission_total,
+                        'opened_at': opened_at,
+                        'closed_at': closed_at,
+                        'last_fill_at': closed_at,
                         'direction': None,
                         'status': 'closed',
                         'lot_snapshots': [],
+                        'matched_lots': [
+                            {
+                                'symbol': symbol,
+                                'side': 'SHORT' if lot_side == 'SHORT' else 'LONG',
+                                'matched_qty': matched_qty,
+                                'open_price': open_price,
+                                'close_price': close_price,
+                                'realized_pnl': realized_piece,
+                                'commission_total': commission_total,
+                                'opened_at': opened_at,
+                                'closed_at': closed_at,
+                            }
+                        ],
                     }
                 )
 
