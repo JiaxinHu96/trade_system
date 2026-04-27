@@ -44,33 +44,6 @@ DEFAULT_MISTAKE_TAGS = [
     'Overtrading',
 ]
 
-SEED_UNIVERSE = [
-    # Futures
-    {'symbol': 'ES', 'asset_class': 'FUT', 'display_name': 'E-mini S&P 500', 'exchange': 'CME'},
-    {'symbol': 'NQ', 'asset_class': 'FUT', 'display_name': 'E-mini NASDAQ 100', 'exchange': 'CME'},
-    {'symbol': 'YM', 'asset_class': 'FUT', 'display_name': 'E-mini Dow', 'exchange': 'CBOT'},
-    {'symbol': 'RTY', 'asset_class': 'FUT', 'display_name': 'E-mini Russell 2000', 'exchange': 'CME'},
-    {'symbol': 'CL', 'asset_class': 'FUT', 'display_name': 'Crude Oil', 'exchange': 'NYMEX'},
-    {'symbol': 'NG', 'asset_class': 'FUT', 'display_name': 'Natural Gas', 'exchange': 'NYMEX'},
-    {'symbol': 'GC', 'asset_class': 'FUT', 'display_name': 'Gold', 'exchange': 'COMEX'},
-    {'symbol': 'SI', 'asset_class': 'FUT', 'display_name': 'Silver', 'exchange': 'COMEX'},
-    {'symbol': 'HG', 'asset_class': 'FUT', 'display_name': 'Copper', 'exchange': 'COMEX'},
-    {'symbol': '6E', 'asset_class': 'FUT', 'display_name': 'Euro FX', 'exchange': 'CME'},
-    {'symbol': 'ZN', 'asset_class': 'FUT', 'display_name': '10Y T-Note', 'exchange': 'CBOT'},
-    {'symbol': 'ZB', 'asset_class': 'FUT', 'display_name': '30Y T-Bond', 'exchange': 'CBOT'},
-    # Stocks
-    {'symbol': 'AAPL', 'asset_class': 'STK', 'display_name': 'Apple Inc.', 'exchange': 'NASDAQ'},
-    {'symbol': 'MSFT', 'asset_class': 'STK', 'display_name': 'Microsoft Corp.', 'exchange': 'NASDAQ'},
-    {'symbol': 'NVDA', 'asset_class': 'STK', 'display_name': 'NVIDIA Corp.', 'exchange': 'NASDAQ'},
-    {'symbol': 'AMZN', 'asset_class': 'STK', 'display_name': 'Amazon.com Inc.', 'exchange': 'NASDAQ'},
-    {'symbol': 'GOOGL', 'asset_class': 'STK', 'display_name': 'Alphabet Inc.', 'exchange': 'NASDAQ'},
-    {'symbol': 'META', 'asset_class': 'STK', 'display_name': 'Meta Platforms Inc.', 'exchange': 'NASDAQ'},
-    {'symbol': 'TSLA', 'asset_class': 'STK', 'display_name': 'Tesla Inc.', 'exchange': 'NASDAQ'},
-    {'symbol': 'SPY', 'asset_class': 'STK', 'display_name': 'SPDR S&P 500 ETF Trust', 'exchange': 'ARCA'},
-    {'symbol': 'QQQ', 'asset_class': 'STK', 'display_name': 'Invesco QQQ Trust', 'exchange': 'NASDAQ'},
-    {'symbol': 'IWM', 'asset_class': 'STK', 'display_name': 'iShares Russell 2000 ETF', 'exchange': 'ARCA'},
-]
-
 
 def _trade_review_column_exists(column_name):
     table_name = TradeReview._meta.db_table
@@ -672,19 +645,6 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
                 latest_imported_at = row.imported_at
 
         symbol_catalog = sorted(catalog_map.values(), key=lambda x: (x['asset_class'], x['symbol']))
-        # Merge seed universe so users can still pick common exchange products even when
-        # IBKR contract-master API is not configured/reachable in current environment.
-        for item in SEED_UNIVERSE:
-            key = (item['symbol'].upper(), item['asset_class'].upper())
-            if key in catalog_map:
-                continue
-            catalog_map[key] = {
-                'symbol': item['symbol'].upper(),
-                'asset_class': item['asset_class'].upper(),
-                'exchange': item.get('exchange', ''),
-                'display_name': item.get('display_name', ''),
-            }
-        symbol_catalog = sorted(catalog_map.values(), key=lambda x: (x['asset_class'], x['symbol']))
         futures_catalog = [item for item in symbol_catalog if item['asset_class'] == 'FUT']
         stocks_catalog = [item for item in symbol_catalog if item['asset_class'] == 'STK']
 
@@ -719,6 +679,34 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
             'data_source': 'IBKR Flex executions imported by /api/syncs/ibkr/start/ and stored in RawIBKRExecution.',
         })
 
+    @action(detail=False, methods=['get'], url_path='instrument-source-status')
+    def instrument_source_status(self, request):
+        base_configured = bool((settings.IBKR_CLIENT_PORTAL_BASE_URL or '').strip())
+        auth_configured = bool((settings.IBKR_CLIENT_PORTAL_AUTH_TOKEN or '').strip())
+        if not base_configured:
+            return Response({
+                'contract_master_ready': False,
+                'base_url_configured': False,
+                'auth_token_configured': auth_configured,
+                'message': 'Set IBKR_CLIENT_PORTAL_BASE_URL to enable IBKR contract-master search.',
+            })
+        try:
+            sample = IBKRClient().search_contracts(query='A', sec_type='STK', limit=1)
+            return Response({
+                'contract_master_ready': True,
+                'base_url_configured': True,
+                'auth_token_configured': auth_configured,
+                'sample_count': len(sample),
+                'message': 'IBKR contract-master search is reachable.',
+            })
+        except Exception as exc:
+            return Response({
+                'contract_master_ready': False,
+                'base_url_configured': True,
+                'auth_token_configured': auth_configured,
+                'message': f'IBKR contract-master search failed: {exc}',
+            })
+
     @action(detail=False, methods=['get'], url_path='instrument-search')
     def instrument_search(self, request):
         query = (request.query_params.get('q') or '').strip()
@@ -737,13 +725,9 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
                 return Response({'results': rows, 'source': 'ibkr_contract_master_scan'})
             except Exception as exc:
                 fallback = self._local_fallback_search(query='', asset_class=asset_class, limit=max(limit, 500))
-                source = 'imported_executions_fallback'
-                if not fallback:
-                    fallback = self._seed_universe_search(query='', asset_class=asset_class, limit=max(limit, 500))
-                    source = 'seed_universe_fallback'
                 return Response({
                     'results': fallback,
-                    'source': source,
+                    'source': 'imported_executions_fallback',
                     'error': str(exc),
                 })
 
@@ -755,13 +739,9 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
         except Exception as exc:
             # Fallback path: local imported executions only
             results = self._local_fallback_search(query=query, asset_class=asset_class, limit=limit)
-            source = 'imported_executions_fallback'
-            if not results:
-                results = self._seed_universe_search(query=query, asset_class=asset_class, limit=limit)
-                source = 'seed_universe_fallback'
             return Response({
                 'results': results,
-                'source': source,
+                'source': 'imported_executions_fallback',
                 'error': str(exc),
             })
 
@@ -788,25 +768,6 @@ class PreTradePlanViewSet(viewsets.ModelViewSet):
             if len(results) >= limit:
                 break
         return results
-
-    def _seed_universe_search(self, query: str, asset_class: str, limit: int):
-        needle = (query or '').strip().lower()
-        rows = []
-        for item in SEED_UNIVERSE:
-            if asset_class in {'FUT', 'STK'} and item['asset_class'] != asset_class:
-                continue
-            if needle and needle not in item['symbol'].lower() and needle not in item.get('display_name', '').lower():
-                continue
-            rows.append({
-                'symbol': item['symbol'].upper(),
-                'asset_class': item['asset_class'].upper(),
-                'display_name': item.get('display_name', ''),
-                'exchange': item.get('exchange', ''),
-                'conid': '',
-            })
-            if len(rows) >= limit:
-                break
-        return rows
 
     def _scan_contract_universe(self, asset_class: str, limit: int):
         client = IBKRClient()

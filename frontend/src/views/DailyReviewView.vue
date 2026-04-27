@@ -569,6 +569,7 @@
         <div class="section-title minor">Select Watchlist</div>
         <div class="muted-copy">Source: IBKR execution imports (auto refresh once per day).</div>
         <div class="muted-copy">Default list = imported executions; typing 2+ chars will query IBKR contract master.</div>
+        <div class="save-warning" v-if="!watchlistInstrumentStatus.contract_master_ready">{{ watchlistInstrumentStatus.message || 'IBKR contract master not ready.' }}</div>
         <div class="muted-copy" v-if="watchlistSearchText.trim().length >= 2 || watchlistRemoteOptions.length">Search source: {{ watchlistSearchSource }}</div>
         <div class="watchlist-modal-tabs">
           <button type="button" class="secondary small-btn" :class="{ 'tab-active': watchlistModalTab === 'FUT' }" @click="watchlistModalTab = 'FUT'">Futures Codes</button>
@@ -605,6 +606,7 @@ import {
   fetchPretradePlans,
   fetchPretradeAssist,
   fetchPretradeInstrumentSearch,
+  fetchPretradeInstrumentStatus,
   fetchReviewQueue,
   fetchSetupSnapshots,
   fetchSetupTags,
@@ -665,6 +667,7 @@ const watchlistRemoteOptions = ref([])
 const watchlistRemoteLoading = ref(false)
 const watchlistFullLoading = ref(false)
 const watchlistSearchSource = ref('imported_executions')
+const watchlistInstrumentStatus = ref({ contract_master_ready: false, message: '' })
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
 const expandedSnapshotLogic = ref([])
@@ -1039,6 +1042,11 @@ async function refreshWatchlistAssist() {
   await loadPretradeAssist()
 }
 
+async function loadInstrumentStatus() {
+  const res = await fetchPretradeInstrumentStatus()
+  watchlistInstrumentStatus.value = res.data || { contract_master_ready: false, message: '' }
+}
+
 async function runWatchlistRemoteSearch() {
   const keyword = (watchlistSearchText.value || '').trim()
   if (keyword.length < 2) {
@@ -1091,7 +1099,11 @@ function openWatchlistModal() {
   watchlistSearchText.value = ''
   watchlistRemoteOptions.value = []
   watchlistSearchSource.value = 'imported_executions'
+  watchlistInstrumentStatus.value = { contract_master_ready: false, message: '' }
   watchlistModalVisible.value = true
+  loadInstrumentStatus().catch(() => {
+    watchlistInstrumentStatus.value = { contract_master_ready: false, message: 'Failed to load IBKR contract-master status.' }
+  })
 }
 
 function closeWatchlistModal(apply = false) {
