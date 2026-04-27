@@ -56,3 +56,16 @@ curl -X POST http://127.0.0.1:8000/api/syncs/ibkr/start/
 
 后续接真实 IBKR 时，只需要替换：
 - `apps/brokers/ibkr_client.py`
+
+## IBKR 合约主数据搜索（Watchlist 全量搜索）
+如果要启用 Pre-Trade Watchlist 的 IBKR 合约主数据搜索，请在 `backend/.env` 配置：
+
+```bash
+IBKR_CLIENT_PORTAL_BASE_URL=https://localhost:5000/v1/api
+IBKR_CLIENT_PORTAL_AUTH_TOKEN=
+IBKR_CLIENT_PORTAL_VERIFY_SSL=0
+```
+
+- `IBKR_CLIENT_PORTAL_BASE_URL`：IBKR Client Portal Gateway 地址（本地常见为 `https://localhost:5000/v1/api`）
+- `IBKR_CLIENT_PORTAL_AUTH_TOKEN`：如你的网关部署需要 Bearer Token 可填写，否则可留空
+- `IBKR_CLIENT_PORTAL_VERIFY_SSL`：本地自签名证书可设 `0`
