@@ -6,11 +6,19 @@ from decimal import Decimal
 from django.db import connection
 from django.db import transaction
 
-from .matching import DayFIFOSummary
 from .models import RawIBKRExecution, TradeFill, TradeGroup, TradeLotSnapshot, TradeMatchedLot
 
 
 ZERO = Decimal('0')
+ONE = Decimal('1')
+FUTURES_MULTIPLIERS = {
+    'MCL': Decimal('100'),
+    'CL': Decimal('1000'),
+    'MES': Decimal('5'),
+    'ES': Decimal('50'),
+    'MNQ': Decimal('2'),
+    'NQ': Decimal('20'),
+}
 
 
 def _to_decimal(value, default: str = '0') -> Decimal:
@@ -54,6 +62,159 @@ def _group_signature(
         opened_at,
         closed_at,
     )
+
+
+def _group_lifecycle_key(*, symbol, asset_class, direction, opened_at, closed_at):
+    """
+    Lifecycle identity for strategy-style trade groups.
+
+    This intentionally excludes PnL/qty aggregates so we can keep stable TradeGroup
+    ids (and attached reviews/journal data) even when calculation logic evolves.
+    """
+    return (
+        symbol or '',
+        asset_class or '',
+        (direction or '').lower(),
+        opened_at,
+        closed_at,
+    )
+
+
+def _sign(value: Decimal) -> int:
+    if value > ZERO:
+        return 1
+    if value < ZERO:
+        return -1
+    return 0
+
+
+def _extract_multiplier(fill) -> Decimal:
+    raw_execution = getattr(fill, 'raw_execution', None)
+    payload = getattr(raw_execution, 'raw_payload', None) or {}
+    raw_value = (
+        payload.get('multiplier')
+        or payload.get('Multiplier')
+        or payload.get('contractMultiplier')
+        or payload.get('contract_multiplier')
+        or payload.get('mult')
+    )
+    if raw_value not in (None, ''):
+        try:
+            value = _to_decimal(raw_value, default='1')
+            if value != ZERO:
+                return value
+        except Exception:
+            pass
+
+    symbol = (getattr(fill, 'symbol', None) or '').upper()
+    for prefix in ('MNQ', 'MCL', 'MES', 'NQ', 'CL', 'ES'):
+        if symbol == prefix or symbol.startswith(prefix):
+            return FUTURES_MULTIPLIERS[prefix]
+    return ONE
+
+
+def _new_trade_bucket(fill, direction: str):
+    return {
+        'symbol': fill.symbol,
+        'asset_class': fill.asset_class,
+        'opened_at': fill.executed_at,
+        'closed_at': None,
+        'last_fill_at': fill.executed_at,
+        'direction': direction,
+        'position_qty': ZERO,
+        'entry_qty': ZERO,
+        'entry_notional': ZERO,
+        'exit_qty': ZERO,
+        'exit_notional': ZERO,
+        'buy_qty': ZERO,
+        'buy_notional': ZERO,
+        'sell_qty': ZERO,
+        'sell_notional': ZERO,
+        'commission_total': ZERO,
+        'multiplier': _extract_multiplier(fill),
+    }
+
+
+def _apply_segment(bucket, *, side: str, qty: Decimal, price: Decimal, commission: Decimal, is_entry: bool, executed_at):
+    if qty <= ZERO:
+        return
+
+    segment_notional = qty * price
+    bucket['last_fill_at'] = executed_at
+    bucket['commission_total'] += commission
+
+    if side == 'BUY':
+        bucket['buy_qty'] += qty
+        bucket['buy_notional'] += segment_notional
+        bucket['position_qty'] += qty
+    else:
+        bucket['sell_qty'] += qty
+        bucket['sell_notional'] += segment_notional
+        bucket['position_qty'] -= qty
+
+    if is_entry:
+        bucket['entry_qty'] += qty
+        bucket['entry_notional'] += segment_notional
+    else:
+        bucket['exit_qty'] += qty
+        bucket['exit_notional'] += segment_notional
+
+
+def _finalize_bucket(bucket, *, force_open=False):
+    entry_qty = bucket['entry_qty']
+    exit_qty = bucket['exit_qty']
+    entry_avg = (bucket['entry_notional'] / entry_qty) if entry_qty > ZERO else None
+    exit_avg = (bucket['exit_notional'] / exit_qty) if exit_qty > ZERO else None
+    position_qty = bucket['position_qty']
+
+    is_closed = position_qty == ZERO and not force_open
+    status = 'closed' if is_closed else 'open'
+
+    if bucket['direction'] == 'long':
+        avg_open_cost = entry_avg if not is_closed else None
+        open_qty = position_qty
+    else:
+        avg_open_cost = entry_avg if not is_closed else None
+        open_qty = position_qty
+
+    qty_for_pnl = entry_qty if is_closed else min(entry_qty, exit_qty)
+    if entry_avg is None or exit_avg is None or qty_for_pnl <= ZERO:
+        realized_pnl = ZERO
+    else:
+        if bucket['direction'] == 'long':
+            realized_pnl = (exit_avg - entry_avg) * qty_for_pnl * bucket['multiplier']
+        else:
+            realized_pnl = (entry_avg - exit_avg) * qty_for_pnl * bucket['multiplier']
+
+    return {
+        'symbol': bucket['symbol'],
+        'asset_class': bucket['asset_class'],
+        'total_buy_qty': bucket['buy_qty'],
+        'total_sell_qty': bucket['sell_qty'],
+        'buy_notional': bucket['buy_notional'],
+        'sell_notional': bucket['sell_notional'],
+        'net_qty': position_qty,
+        'avg_open_cost': avg_open_cost,
+        'open_qty': open_qty,
+        'realized_pnl': realized_pnl,
+        'commission_total': bucket['commission_total'],
+        'opened_at': bucket['opened_at'],
+        'closed_at': bucket['last_fill_at'] if is_closed else None,
+        'last_fill_at': bucket['last_fill_at'],
+        'direction': bucket['direction'],
+        'status': status,
+        'lot_snapshots': [
+            {
+                'open_qty': open_qty,
+                'remaining_qty': abs(position_qty),
+                'open_price': entry_avg,
+                'opened_at': bucket['opened_at'],
+            }
+        ]
+        if not is_closed and entry_avg is not None and position_qty != ZERO
+        else [],
+        'matched_lots': [],
+    }
 
 
 @transaction.atomic
@@ -107,7 +268,17 @@ def rebuild_all_trade_groups():
 
     existing_groups = list(TradeGroup.objects.all().order_by('id'))
     existing_by_signature = defaultdict(list)
+    existing_by_lifecycle = defaultdict(list)
     for group in existing_groups:
+        lifecycle_key = _group_lifecycle_key(
+            symbol=group.symbol,
+            asset_class=group.asset_class,
+            direction=group.direction,
+            opened_at=group.opened_at,
+            closed_at=group.closed_at,
+        )
+        existing_by_lifecycle[lifecycle_key].append(group)
+
         signature = _group_signature(
             symbol=group.symbol,
             asset_class=group.asset_class,
@@ -136,115 +307,65 @@ def rebuild_all_trade_groups():
         key = (account or '', fill.symbol or '', fill.asset_class or '')
         fills_by_position_key[key].append(fill)
 
-    for (_, symbol, asset_class), key_fills in fills_by_position_key.items():
-        matcher = DayFIFOSummary()
+    for (_, _symbol, _asset_class), key_fills in fills_by_position_key.items():
+        current_bucket = None
 
         for fill in key_fills:
-            match_info = matcher.apply_fill(fill)
-            raw_realized = None
-            if getattr(fill, 'raw_execution', None) is not None and fill.raw_execution.realized_pnl is not None:
-                raw_realized = _to_decimal(fill.raw_execution.realized_pnl)
-            closed_qty = _to_decimal(match_info.get('closed_qty'))
-            closed_lots = match_info.get('closed_lots') or []
-            for closed_lot in closed_lots:
-                matched_qty = _to_decimal(closed_lot.get('matched_qty'))
-                if matched_qty <= ZERO:
+            side = (fill.side or '').upper()
+            if side not in ('BUY', 'SELL'):
+                continue
+
+            fill_qty_total = _to_decimal(fill.quantity)
+            if fill_qty_total <= ZERO:
+                continue
+
+            fill_price = _to_decimal(fill.price)
+            fill_commission = _to_decimal(fill.commission)
+            qty_remaining = fill_qty_total
+
+            while qty_remaining > ZERO:
+                if current_bucket is None:
+                    direction = 'long' if side == 'BUY' else 'short'
+                    current_bucket = _new_trade_bucket(fill, direction)
+
+                position_sign = _sign(current_bucket['position_qty'])
+                side_sign = 1 if side == 'BUY' else -1
+
+                if position_sign == 0 or position_sign == side_sign:
+                    segment_qty = qty_remaining
+                    segment_commission = fill_commission * (segment_qty / fill_qty_total)
+                    _apply_segment(
+                        current_bucket,
+                        side=side,
+                        qty=segment_qty,
+                        price=fill_price,
+                        commission=segment_commission,
+                        is_entry=True,
+                        executed_at=fill.executed_at,
+                    )
+                    qty_remaining -= segment_qty
                     continue
-                if raw_realized is not None and closed_qty > ZERO:
-                    realized_piece = raw_realized * (matched_qty / closed_qty)
-                else:
-                    realized_piece = _to_decimal(closed_lot.get('realized_pnl'))
-                open_price = _to_decimal(closed_lot.get('open_price'))
-                close_price = _to_decimal(closed_lot.get('close_price'))
-                lot_side = (closed_lot.get('lot_side') or '').upper()
-                if lot_side == 'SHORT':
-                    buy_notional = matched_qty * close_price
-                    sell_notional = matched_qty * open_price
-                else:
-                    buy_notional = matched_qty * open_price
-                    sell_notional = matched_qty * close_price
 
-                opened_at = closed_lot.get('opened_at') or fill.executed_at
-                closed_at = fill.executed_at
-                commission_total = _to_decimal(closed_lot.get('entry_commission')) + _to_decimal(closed_lot.get('exit_commission'))
-                trade_buckets.append(
-                    {
-                        'symbol': symbol,
-                        'asset_class': asset_class,
-                        'total_buy_qty': matched_qty,
-                        'total_sell_qty': matched_qty,
-                        'buy_notional': buy_notional,
-                        'sell_notional': sell_notional,
-                        'net_qty': ZERO,
-                        'avg_open_cost': None,
-                        'open_qty': ZERO,
-                        'realized_pnl': realized_piece,
-                        'commission_total': commission_total,
-                        'opened_at': opened_at,
-                        'closed_at': closed_at,
-                        'last_fill_at': closed_at,
-                        'direction': None,
-                        'status': 'closed',
-                        'lot_snapshots': [],
-                        'matched_lots': [
-                            {
-                                'symbol': symbol,
-                                'side': 'SHORT' if lot_side == 'SHORT' else 'LONG',
-                                'matched_qty': matched_qty,
-                                'open_price': open_price,
-                                'close_price': close_price,
-                                'realized_pnl': realized_piece,
-                                'commission_total': commission_total,
-                                'opened_at': opened_at,
-                                'closed_at': closed_at,
-                            }
-                        ],
-                    }
+                closing_capacity = abs(current_bucket['position_qty'])
+                segment_qty = min(qty_remaining, closing_capacity)
+                segment_commission = fill_commission * (segment_qty / fill_qty_total)
+                _apply_segment(
+                    current_bucket,
+                    side=side,
+                    qty=segment_qty,
+                    price=fill_price,
+                    commission=segment_commission,
+                    is_entry=False,
+                    executed_at=fill.executed_at,
                 )
+                qty_remaining -= segment_qty
 
-        open_lots = matcher.snapshot_open_lots()
-        net_open_qty = matcher.get_open_qty()
-        if net_open_qty != ZERO and open_lots:
-            avg_open_cost = matcher.get_avg_open_cost()
-            earliest_opened_at = min((lot.get('opened_at') for lot in open_lots if lot.get('opened_at')), default=None)
-            latest_opened_at = max((lot.get('opened_at') for lot in open_lots if lot.get('opened_at')), default=None)
-            abs_open_qty = abs(net_open_qty)
-            direction = 'SHORT' if net_open_qty < ZERO else 'LONG'
-            if direction == 'SHORT':
-                total_buy_qty = ZERO
-                total_sell_qty = abs_open_qty
-                buy_notional = ZERO
-                sell_notional = (avg_open_cost or ZERO) * abs_open_qty
-            else:
-                total_buy_qty = abs_open_qty
-                total_sell_qty = ZERO
-                buy_notional = (avg_open_cost or ZERO) * abs_open_qty
-                sell_notional = ZERO
+                if current_bucket['position_qty'] == ZERO:
+                    trade_buckets.append(_finalize_bucket(current_bucket))
+                    current_bucket = None
 
-            trade_buckets.append(
-                {
-                    'symbol': symbol,
-                    'asset_class': asset_class,
-                    'total_buy_qty': total_buy_qty,
-                    'total_sell_qty': total_sell_qty,
-                    'buy_notional': buy_notional,
-                    'sell_notional': sell_notional,
-                    'net_qty': net_open_qty,
-                    'avg_open_cost': avg_open_cost,
-                    'open_qty': net_open_qty,
-                    'realized_pnl': ZERO,
-                    'commission_total': ZERO,
-                    'opened_at': earliest_opened_at,
-                    'closed_at': None,
-                    'last_fill_at': latest_opened_at or earliest_opened_at,
-                    'direction': direction,
-                    'status': 'open',
-                    'had_buy': False,
-                    'had_sell': False,
-                    'lot_snapshots': open_lots,
-                    'matched_lots': [],
-                }
-            )
+        if current_bucket is not None:
+            trade_buckets.append(_finalize_bucket(current_bucket, force_open=True))
 
     retained_group_ids = set()
     for bucket in sorted(
@@ -280,7 +401,16 @@ def rebuild_all_trade_groups():
             opened_at=bucket['opened_at'],
             closed_at=bucket['closed_at'],
         )
-        candidates = existing_by_signature.get(signature) or []
+        lifecycle_key = _group_lifecycle_key(
+            symbol=bucket['symbol'],
+            asset_class=bucket['asset_class'],
+            direction=bucket['direction'],
+            opened_at=bucket['opened_at'],
+            closed_at=bucket['closed_at'],
+        )
+        candidates = existing_by_lifecycle.get(lifecycle_key) or []
+        if not candidates:
+            candidates = existing_by_signature.get(signature) or []
         group = candidates.pop(0) if candidates else None
         payload = {
             'symbol': bucket['symbol'],
@@ -328,26 +458,29 @@ def rebuild_all_trade_groups():
                 ]
             )
 
-        matched_lots = bucket.get('matched_lots') or []
-        if matched_lots and has_matched_lot_table:
-            TradeMatchedLot.objects.bulk_create(
-                [
-                    TradeMatchedLot(
-                        trade_group=group,
-                        symbol=lot['symbol'],
-                        side=lot['side'],
-                        matched_qty=lot['matched_qty'],
-                        open_price=lot['open_price'],
-                        close_price=lot['close_price'],
-                        realized_pnl=lot['realized_pnl'],
-                        commission_total=lot['commission_total'],
-                        opened_at=lot['opened_at'],
-                        closed_at=lot['closed_at'],
-                    )
-                    for lot in matched_lots
-                ]
-            )
-
     stale_group_ids = [group.id for group in existing_groups if group.id not in retained_group_ids]
     if stale_group_ids:
-        TradeGroup.objects.filter(id__in=stale_group_ids).delete()
+        stale_groups = list(
+            TradeGroup.objects.filter(id__in=stale_group_ids).prefetch_related(
+                'daily_reviews',
+                'daily_review_links',
+                'position_checkpoints',
+            )
+        )
+        deletable_ids = []
+        for group in stale_groups:
+            has_user_links = any(
+                [
+                    hasattr(group, 'journal'),
+                    hasattr(group, 'trade_review'),
+                    hasattr(group, 'pretrade_snapshot'),
+                    group.daily_reviews.exists(),
+                    group.daily_review_links.exists(),
+                    group.position_checkpoints.exists(),
+                ]
+            )
+            if not has_user_links:
+                deletable_ids.append(group.id)
+
+        if deletable_ids:
+            TradeGroup.objects.filter(id__in=deletable_ids).delete()
