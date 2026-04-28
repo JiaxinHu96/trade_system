@@ -17,6 +17,8 @@
       </div>
     </section>
 
+    <div v-if="actionNotice" class="action-toast" role="status" aria-live="polite">{{ actionNotice }}</div>
+
     <template v-if="journalTab === 'workspace'">
     <section class="card workspace-summary-card">
       <div class="journal-form-grid workspace-summary-grid">
@@ -673,7 +675,18 @@ const compareDimension = ref('by_strategy')
 const compareLeftKey = ref('')
 const compareRightKey = ref('')
 const confirmDialog = ref({ visible: false, title: 'Confirm', message: '', confirmText: 'Confirm', cancelText: 'Cancel' })
+const actionNotice = ref('')
 let confirmResolver = null
+let actionNoticeTimer = null
+
+function showActionNotice(message) {
+  actionNotice.value = message
+  if (actionNoticeTimer) clearTimeout(actionNoticeTimer)
+  actionNoticeTimer = setTimeout(() => {
+    actionNotice.value = ''
+    actionNoticeTimer = null
+  }, 2200)
+}
 
 const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
@@ -1149,6 +1162,7 @@ async function saveCardReview(tradeGroupId) {
     await saveTradeReview(payload)
     tradeSaveErrors.value[tradeGroupId] = ''
     await loadQueue()
+    showActionNotice('Trade Review 保存成功')
   } catch (error) {
     const data = error?.response?.data || {}
     tradeSaveErrors.value[tradeGroupId] = Object.entries(data)
@@ -1258,6 +1272,7 @@ async function savePretrade(withConfirm = true) {
     const res = pretradeForm.value.id ? await updatePretradePlan(pretradeForm.value.id, payload) : await savePretradePlan(payload)
     pretradeForm.value = res.data
     if (!snapshotForms.value.length) snapshotForms.value = [buildLocalSnapshot()]
+    showActionNotice('Pre-Trade Plan 保存成功')
   } finally {
     savingPretrade.value = false
   }
@@ -1284,6 +1299,7 @@ async function removeSnapshotRow(row) {
   if (snapshotForms.value.length && !expandedSnapshotCards.value.length) {
     expandedSnapshotCards.value = snapshotForms.value.map((item) => item.local_id)
   }
+  showActionNotice('Snapshot 删除成功')
 }
 
 async function removeLastSnapshotRow() {
@@ -1340,6 +1356,7 @@ async function saveSnapshot(row) {
     delete payload.local_id
     const res = row.id ? await updateSetupSnapshot(row.id, payload) : await saveSetupSnapshot(payload)
     Object.assign(row, buildLocalSnapshot(res.data))
+    showActionNotice('Snapshot 保存成功')
   } finally {
     savingSnapshotId.value = null
   }
@@ -1435,6 +1452,7 @@ function removeTradeScreenshot(tradeGroupId, index) {
     const arr = [...(tradeReviewForms.value[tradeGroupId].screenshots || [])]
     arr.splice(index, 1)
     tradeReviewForms.value[tradeGroupId].screenshots = arr
+    showActionNotice('截图删除成功')
   })
 }
 
@@ -1450,6 +1468,7 @@ async function saveCheckpoint(tradeGroupId) {
   try {
     await savePositionCheckpoint({ ...positionForms.value[tradeGroupId] })
     await loadQueue()
+    showActionNotice('Checkpoint 保存成功')
   } finally {
     savingPosition.value = null
   }
@@ -1480,6 +1499,7 @@ function removeDailyScreenshot(index) {
     const arr = [...(form.value.image_urls || [])]
     arr.splice(index, 1)
     form.value.image_urls = arr
+    showActionNotice('截图删除成功')
   })
 }
 
@@ -1498,6 +1518,7 @@ async function saveDailyReview(mode = 'draft') {
     payload.max_daily_loss_respected = maxLossSelection.value === '' ? null : maxLossSelection.value === 'true'
     await createDailyReview(payload)
     await loadQueue()
+    showActionNotice(mode === 'completed' ? 'Daily Review 标记完成成功' : 'Daily Review 草稿保存成功')
   } finally {
     savingDaily.value = false
   }
@@ -1528,10 +1549,26 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocumentClick)
+  if (actionNoticeTimer) clearTimeout(actionNoticeTimer)
 })
 </script>
 
 <style scoped>
+.action-toast {
+  position: sticky;
+  top: 10px;
+  z-index: 50;
+  width: fit-content;
+  margin: 0 auto 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #ecfdf5;
+  color: #166534;
+  border: 1px solid #86efac;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+  font-weight: 600;
+}
+
 .workspace-summary-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 220px));
   gap: 10px 14px;
