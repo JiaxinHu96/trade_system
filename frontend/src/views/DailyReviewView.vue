@@ -241,8 +241,10 @@
       </div>
       <div class="pretrade-module-card">
         <div class="section-title minor">② Strategy & Checklist</div>
-        <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
-        <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
+        <div class="pretrade-textarea-grid">
+          <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
+          <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="3"></textarea></label>
+        </div>
         <div>
           <span>Checklist</span>
           <div class="checklist-banner" :class="pretradeChecklistPassed ? 'status-good-block' : 'status-bad-block'">
@@ -261,9 +263,10 @@
           <div>🟡 Remaining: {{ remainingRiskR.toFixed(2) }}R</div>
           <div>🔴 Max: {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R</div>
           <div class="risk-progress">
-            <div class="risk-progress-fill" :style="{ width: `${usedRiskPct}%` }"></div>
+            <div class="risk-progress-fill" :style="{ width: `${usedRiskPct}%` }">
+              <span class="risk-progress-label">{{ usedRiskPct.toFixed(0) }}%</span>
+            </div>
           </div>
-          <div class="muted-copy">[{{ riskProgressBar }}] {{ usedRiskPct.toFixed(0) }}%</div>
         </div>
         <div v-if="riskLimitReached" class="save-error">Risk budget reached. New setup snapshots are blocked until budget is increased.</div>
         <div class="save-error" v-if="pretradeError">{{ pretradeError }}</div>
@@ -1259,10 +1262,6 @@ const riskStatusClass = computed(() => {
   if (usedRiskPct.value >= 75) return 'risk-warning'
   return 'risk-safe'
 })
-const riskProgressBar = computed(() => {
-  const filled = Math.round(usedRiskPct.value / 10)
-  return `${'█'.repeat(filled)}${'░'.repeat(Math.max(0, 10 - filled))}`
-})
 const checklistKeys = ['market_trending', 'volume_above_average', 'no_major_news_risk', 'clean_structure']
 const checklistTotal = checklistKeys.length
 const checklistPassCount = computed(() => checklistKeys.reduce((sum, key) => sum + (pretradeChecklist.value[key] ? 1 : 0), 0))
@@ -1603,6 +1602,12 @@ onBeforeUnmount(() => {
   padding: 14px;
 }
 
+.pretrade-textarea-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px 12px;
+}
+
 .pretrade-checklist-grid {
   margin-top: 8px;
   display: grid;
@@ -1804,8 +1809,7 @@ onBeforeUnmount(() => {
   margin-right: 8px;
 }
 
-.risk-progress,
-.risk-dashboard .muted-copy {
+.risk-progress {
   grid-column: 1 / -1;
 }
 
@@ -1838,6 +1842,8 @@ onBeforeUnmount(() => {
 .status-bad-block {
   margin-top: 6px;
   padding: 6px 10px;
+  width: fit-content;
+  min-width: 140px;
   border-radius: 8px;
   border: 1px solid transparent;
 }
@@ -1854,7 +1860,7 @@ onBeforeUnmount(() => {
 
 .risk-progress {
   grid-column: 1 / -1;
-  height: 8px;
+  height: 18px;
   border-radius: 999px;
   background: #e5e7eb;
   overflow: hidden;
@@ -1863,6 +1869,18 @@ onBeforeUnmount(() => {
 .risk-progress-fill {
   height: 100%;
   background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 44px;
+  padding-right: 8px;
+}
+
+.risk-progress-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.45);
 }
 
 .logic-toggle-row {
