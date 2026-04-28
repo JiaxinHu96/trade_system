@@ -277,6 +277,13 @@
 
       <div class="section-title" style="margin-top:14px;">③ Setup Snapshots</div>
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
+        <div class="snapshot-row-head">
+          <div class="section-title minor" style="margin:0;">Snapshot {{ idx + 1 }} · {{ row.symbol || 'No symbol' }}</div>
+          <button type="button" class="secondary small-btn" @click="toggleSnapshotCard(row.local_id)">
+            {{ expandedSnapshotCards.includes(row.local_id) ? 'Collapse' : 'Expand' }}
+          </button>
+        </div>
+        <div v-if="expandedSnapshotCards.includes(row.local_id)">
         <div class="section-title minor">Basic</div>
         <div class="journal-form-grid workspace-field-grid">
           <label :title="fieldHint('snapshot_symbol')">
@@ -341,11 +348,8 @@
           <label><span>Stop Logic</span><textarea v-model="row.stop_logic" rows="2" placeholder="below liquidity sweep"></textarea></label>
         </div>
         <div class="muted-copy" :class="confidenceClass(row.confidence_score)">Confidence signal: {{ confidenceSignal(row.confidence_score) }}</div>
-        <div class="section-title minor">Logic</div>
-        <div class="filter-action-row" style="margin-top:0;">
-          <button type="button" class="secondary small-btn" @click="toggleSnapshotLogic(row.local_id)">{{ expandedSnapshotLogic.includes(row.local_id) ? 'Hide Logic' : 'Show Logic' }}</button>
-        </div>
-        <div v-if="expandedSnapshotLogic.includes(row.local_id)">
+        <div v-if="row.trading_mode !== 'reactive'">
+          <div class="section-title minor">Logic</div>
           <div class="journal-form-grid workspace-field-grid">
             <label :title="fieldHint('snapshot_trigger_type')"><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
             <label :title="fieldHint('snapshot_invalidation_type')"><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
@@ -357,6 +361,7 @@
         <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
         <div class="filter-action-row">
           <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
+        </div>
         </div>
       </div>
       <div class="filter-action-row">
@@ -652,7 +657,7 @@ const sessionDropdownOpen = ref(false)
 const watchlistText = ref('')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
-const expandedSnapshotLogic = ref([])
+const expandedSnapshotCards = ref([])
 const savingPretrade = ref(false)
 const savingSnapshotId = ref(null)
 const pretradeError = ref('')
@@ -904,10 +909,10 @@ const filteredTimeline = computed(() => {
 
 function toggleCard(id) { expandedCards.value = expandedCards.value.includes(id) ? expandedCards.value.filter((v) => v !== id) : [...expandedCards.value, id] }
 function togglePosition(id) { expandedPositions.value = expandedPositions.value.includes(id) ? expandedPositions.value.filter((v) => v !== id) : [...expandedPositions.value, id] }
-function toggleSnapshotLogic(localId) {
-  expandedSnapshotLogic.value = expandedSnapshotLogic.value.includes(localId)
-    ? expandedSnapshotLogic.value.filter((v) => v !== localId)
-    : [...expandedSnapshotLogic.value, localId]
+function toggleSnapshotCard(localId) {
+  expandedSnapshotCards.value = expandedSnapshotCards.value.includes(localId)
+    ? expandedSnapshotCards.value.filter((v) => v !== localId)
+    : [...expandedSnapshotCards.value, localId]
 }
 function openDatePicker(event) {
   const dateInput = event?.target
@@ -1205,14 +1210,14 @@ async function loadPretrade() {
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false, ...(existing.pre_trade_checklist || {}) }
     const snaps = await fetchSetupSnapshots({ pretrade_plan: existing.id, page_size: 50 })
     snapshotForms.value = (snaps.data?.results || snaps.data || []).map((item) => buildLocalSnapshot(item))
-    expandedSnapshotLogic.value = []
+    expandedSnapshotCards.value = snapshotForms.value.map((row) => row.local_id)
   } else {
     pretradeForm.value = { id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' }
     pretradeSessions.value = ['premarket']
     watchlistText.value = ''
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false }
     snapshotForms.value = [buildLocalSnapshot()]
-    expandedSnapshotLogic.value = []
+    expandedSnapshotCards.value = snapshotForms.value.map((row) => row.local_id)
   }
   syncLabelTitleTargets()
 }
@@ -1259,7 +1264,9 @@ async function savePretrade(withConfirm = true) {
 }
 
 function addSnapshotRow() {
-  snapshotForms.value.push(buildLocalSnapshot())
+  const nextRow = buildLocalSnapshot()
+  snapshotForms.value.push(nextRow)
+  expandedSnapshotCards.value = [...expandedSnapshotCards.value, nextRow.local_id]
 }
 
 async function removeSnapshotRow(row) {
@@ -1272,7 +1279,11 @@ async function removeSnapshotRow(row) {
   if (!ok) return
   if (row.id) await deleteSetupSnapshot(row.id)
   snapshotForms.value = snapshotForms.value.filter((item) => item.local_id !== row.local_id)
+  expandedSnapshotCards.value = expandedSnapshotCards.value.filter((id) => id !== row.local_id)
   if (!snapshotForms.value.length) snapshotForms.value = [buildLocalSnapshot()]
+  if (snapshotForms.value.length && !expandedSnapshotCards.value.length) {
+    expandedSnapshotCards.value = snapshotForms.value.map((item) => item.local_id)
+  }
 }
 
 async function removeLastSnapshotRow() {
@@ -1692,6 +1703,14 @@ onBeforeUnmount(() => {
   background: #ffffff;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
   padding: 14px;
+}
+
+.snapshot-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
 .pretrade-textarea-grid {
