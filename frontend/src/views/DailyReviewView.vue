@@ -35,6 +35,7 @@
       </div>
     </section>
 
+    <div class="workspace-review-cluster">
     <section class="card workspace-primary-card" ref="tradeSectionRef">
       <div class="section-title">Trade Review Cards</div>
       <div v-if="!queue.closed_trades?.length" class="empty-row">No closed trades for this day.</div>
@@ -214,6 +215,7 @@
         </div>
       </div>
     </section>
+    </div>
     </template>
 
     <section v-else-if="journalTab === 'pretrade'" class="card">
@@ -1587,6 +1589,26 @@ onBeforeUnmount(() => {
   border: 1px solid #e5e7eb;
   border-radius: 14px;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.workspace-review-cluster {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
+  box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.45);
+}
+
+.workspace-review-cluster .workspace-primary-card,
+.workspace-review-cluster .workspace-secondary-card,
+.workspace-review-cluster .workspace-tertiary-card {
+  margin-top: 0;
+}
+
+.workspace-review-cluster .workspace-secondary-card,
+.workspace-review-cluster .workspace-tertiary-card {
+  margin-top: 14px;
 }
 
 .workspace-primary-card {
