@@ -1606,7 +1606,7 @@ onBeforeUnmount(() => {
 .pretrade-checklist-grid {
   margin-top: 8px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 220px));
+  grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
   justify-content: start;
   gap: 6px 8px;
 }
@@ -1617,6 +1617,8 @@ onBeforeUnmount(() => {
   justify-content: flex-start;
   gap: 6px;
   padding: 6px 10px;
+  width: max-content;
+  max-width: 100%;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
 }
@@ -1688,6 +1690,17 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
+}
+
+.multi-select-option :deep(input[type='checkbox']),
+.checklist-item :deep(input[type='checkbox']) {
+  width: auto;
+  min-width: 14px;
+  height: 14px;
+  padding: 0;
+  margin: 0;
+  border-radius: 3px;
+  flex: 0 0 auto;
 }
 
 .trade-review-text-grid :deep(textarea) {
