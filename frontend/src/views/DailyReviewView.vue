@@ -20,6 +20,7 @@
     <div v-if="actionNotice" class="action-toast" role="status" aria-live="polite">{{ actionNotice }}</div>
 
     <template v-if="journalTab === 'workspace'">
+    <div class="workspace-review-cluster">
     <section class="card workspace-summary-card">
       <div class="journal-form-grid workspace-summary-grid">
         <div class="stat-pill queue-date-pill" :title="fieldHint('queue_date')">
@@ -35,7 +36,6 @@
       </div>
     </section>
 
-    <div class="workspace-review-cluster">
     <section class="card workspace-primary-card" ref="tradeSectionRef">
       <div class="section-title">Trade Review Cards</div>
       <div v-if="!queue.closed_trades?.length" class="empty-row">No closed trades for this day.</div>
@@ -1592,22 +1592,15 @@ onBeforeUnmount(() => {
 }
 
 .workspace-review-cluster {
-  margin-top: 14px;
+  margin-top: 10px;
   padding: 14px;
   border: 1px solid #cbd5e1;
   border-radius: 16px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
+  background: #ffffff;
   box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.45);
 }
 
-.workspace-review-cluster .workspace-primary-card,
-.workspace-review-cluster .workspace-secondary-card,
-.workspace-review-cluster .workspace-tertiary-card {
-  margin-top: 0;
-}
-
-.workspace-review-cluster .workspace-secondary-card,
-.workspace-review-cluster .workspace-tertiary-card {
+.workspace-review-cluster > .card + .card {
   margin-top: 14px;
 }
 
