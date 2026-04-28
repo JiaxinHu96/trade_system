@@ -20,7 +20,7 @@
     <div v-if="actionNotice" class="action-toast" role="status" aria-live="polite">{{ actionNotice }}</div>
 
     <template v-if="journalTab === 'workspace'">
-    <div class="workspace-review-cluster">
+    <div class="card workspace-review-cluster">
     <section class="card workspace-summary-card">
       <div class="journal-form-grid workspace-summary-grid">
         <div class="stat-pill queue-date-pill" :title="fieldHint('queue_date')">
@@ -1592,12 +1592,8 @@ onBeforeUnmount(() => {
 }
 
 .workspace-review-cluster {
-  margin-top: 10px;
+  margin-top: 12px;
   padding: 14px;
-  border: 1px solid #cbd5e1;
-  border-radius: 16px;
-  background: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.45);
 }
 
 .workspace-review-cluster > .card + .card {
