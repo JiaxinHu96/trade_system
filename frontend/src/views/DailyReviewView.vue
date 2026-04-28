@@ -17,6 +17,8 @@
       </div>
     </section>
 
+    <div v-if="actionNotice" class="action-toast" role="status" aria-live="polite">{{ actionNotice }}</div>
+
     <template v-if="journalTab === 'workspace'">
     <section class="card workspace-summary-card">
       <div class="journal-form-grid workspace-summary-grid">
@@ -241,8 +243,10 @@
       </div>
       <div class="pretrade-module-card">
         <div class="section-title minor">② Strategy & Checklist</div>
-        <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
-        <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="2"></textarea></label>
+        <div class="pretrade-textarea-grid">
+          <label :title="fieldHint('game_plan')"><span>Game Plan</span><textarea v-model="pretradeForm.game_plan" rows="3"></textarea></label>
+          <label :title="fieldHint('catalysts')"><span>Catalysts</span><textarea v-model="pretradeForm.catalysts" rows="3"></textarea></label>
+        </div>
         <div>
           <span>Checklist</span>
           <div class="checklist-banner" :class="pretradeChecklistPassed ? 'status-good-block' : 'status-bad-block'">
@@ -261,9 +265,10 @@
           <div>🟡 Remaining: {{ remainingRiskR.toFixed(2) }}R</div>
           <div>🔴 Max: {{ Number(pretradeForm.risk_budget_r || 0).toFixed(2) }}R</div>
           <div class="risk-progress">
-            <div class="risk-progress-fill" :style="{ width: `${usedRiskPct}%` }"></div>
+            <div class="risk-progress-fill" :style="{ width: `${usedRiskPct}%` }">
+              <span class="risk-progress-label">{{ usedRiskPct.toFixed(0) }}%</span>
+            </div>
           </div>
-          <div class="muted-copy">[{{ riskProgressBar }}] {{ usedRiskPct.toFixed(0) }}%</div>
         </div>
         <div v-if="riskLimitReached" class="save-error">Risk budget reached. New setup snapshots are blocked until budget is increased.</div>
         <div class="save-error" v-if="pretradeError">{{ pretradeError }}</div>
@@ -274,33 +279,79 @@
 
       <div class="section-title" style="margin-top:14px;">③ Setup Snapshots</div>
       <div v-for="(row, idx) in snapshotForms" :key="`snap-${idx}`" class="journal-entry-card" style="margin-bottom:10px;">
+        <div class="snapshot-row-head">
+          <div class="section-title minor" style="margin:0;">Snapshot {{ idx + 1 }} · {{ row.symbol || 'No symbol' }}</div>
+          <button type="button" class="secondary small-btn" @click="toggleSnapshotCard(row.local_id)">
+            {{ expandedSnapshotCards.includes(row.local_id) ? 'Collapse' : 'Expand' }}
+          </button>
+        </div>
+        <div v-if="expandedSnapshotCards.includes(row.local_id)">
         <div class="section-title minor">Basic</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label :title="fieldHint('snapshot_symbol')"><span>Symbol <span class="required-asterisk">*</span></span><input v-model="row.symbol" :class="{ 'field-missing': isSnapshotMissing(row, 'symbol') }" :placeholder="isSnapshotMissing(row, 'symbol') ? 'Required field' : ''" /></label>
-          <label :title="fieldHint('snapshot_strategy')"><span>Strategy <span class="required-asterisk">*</span></span><input v-model="row.strategy" :class="{ 'field-missing': isSnapshotMissing(row, 'strategy') }" :placeholder="isSnapshotMissing(row, 'strategy') ? 'Required field' : ''" /></label>
+          <label :title="fieldHint('snapshot_symbol')">
+            <span>Symbol <span class="required-asterisk">*</span></span>
+            <select v-model="row.symbol" :class="{ 'field-missing': isSnapshotMissing(row, 'symbol') }">
+              <option value="">Select from watchlist</option>
+              <option v-for="sym in watchlistOptions" :key="`wl-${sym}`" :value="sym">{{ sym }}</option>
+            </select>
+          </label>
+          <label :title="fieldHint('snapshot_strategy')">
+            <span>Strategy (optional)</span>
+            <input v-model="row.strategy" :list="`snapshot-strategy-options-${row.local_id}`" placeholder="Opening Drive / 自定义..." />
+          </label>
           <label :title="fieldHint('snapshot_direction')"><span>Direction <span class="required-asterisk">*</span></span><select v-model="row.direction" :class="{ 'field-missing': isSnapshotMissing(row, 'direction') }"><option value="long">long</option><option value="short">short</option></select></label>
         </div>
+        <datalist :id="`snapshot-strategy-options-${row.local_id}`">
+          <option value="Opening Drive"></option>
+          <option value="VWAP Reversion"></option>
+          <option value="Liquidity Sweep"></option>
+        </datalist>
         <div class="section-title minor">Setup</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label :title="fieldHint('snapshot_setup_type')"><span>Setup Type <span class="required-asterisk">*</span></span><select v-model="row.setup_type" :class="{ 'field-missing': isSnapshotMissing(row, 'setup_type') }"><option value="breakout">breakout</option><option value="pullback">pullback</option><option value="reversal">reversal</option><option value="range">range</option></select></label>
+          <label :title="fieldHint('snapshot_setup_type')">
+            <span>Setup <span class="required-asterisk">*</span></span>
+            <input
+              v-model="row.setup_merged"
+              :list="`snapshot-setup-options-${row.local_id}`"
+              :class="{ 'field-missing': isSnapshotMissing(row, 'setup_merged') }"
+              :placeholder="isSnapshotMissing(row, 'setup_merged') ? 'Required field' : 'breakout / setup tag / custom...'"
+            />
+          </label>
+          <datalist :id="`snapshot-setup-options-${row.local_id}`">
+            <option value="breakout"></option>
+            <option value="pullback"></option>
+            <option value="reversal"></option>
+            <option value="range"></option>
+            <option v-for="item in setupTags" :key="`setup-opt-${item.id}`" :value="item.name"></option>
+          </datalist>
           <label :title="fieldHint('snapshot_timeframe')"><span>Timeframe <span class="required-asterisk">*</span></span><select v-model="row.timeframe" :class="{ 'field-missing': isSnapshotMissing(row, 'timeframe') }"><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="1d">1d</option></select></label>
           <label :title="fieldHint('snapshot_confidence')"><span>Confidence (1-10)</span><input type="number" min="1" max="10" v-model.number="row.confidence_score" /></label>
-          <label :title="fieldHint('snapshot_setup_tag')"><span>Setup</span><select v-model="row.setup"><option :value="null">-</option><option v-for="item in setupTags" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
           <label :title="fieldHint('snapshot_checklist_passed')"><span>Checklist passed <span class="required-asterisk">*</span></span><select v-model="row.checklist_passed"><option :value="true">Yes</option><option :value="false">No</option></select></label>
         </div>
         <div class="section-title minor">Execution Plan</div>
         <div class="journal-form-grid workspace-field-grid">
-          <label :title="fieldHint('snapshot_planned_entry')"><span>Planned Entry <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_entry" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_entry') }" :placeholder="isSnapshotMissing(row, 'planned_entry') ? 'Required field' : ''" /></label>
-          <label :title="fieldHint('snapshot_planned_stop')"><span>Planned Stop <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_stop" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_stop') }" :placeholder="isSnapshotMissing(row, 'planned_stop') ? 'Required field' : ''" /></label>
-          <label :title="fieldHint('snapshot_planned_target')"><span>Planned Target <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_target" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_target') }" :placeholder="isSnapshotMissing(row, 'planned_target') ? 'Required field' : ''" /></label>
+          <label>
+            <span>Trading Mode</span>
+            <div class="trading-mode-switch">
+              <label class="mode-option"><input type="radio" value="planned" v-model="row.trading_mode" /> Planned Trade</label>
+              <label class="mode-option"><input type="radio" value="reactive" v-model="row.trading_mode" /> Reactive Trade</label>
+            </div>
+          </label>
+        </div>
+        <div class="journal-form-grid workspace-field-grid">
+          <label v-if="row.trading_mode !== 'reactive'" :title="fieldHint('snapshot_planned_entry')"><span>Planned Entry <span class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_entry" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_entry') }" :placeholder="isSnapshotMissing(row, 'planned_entry') ? 'Required field' : ''" /></label>
+          <label v-else><span>Entry</span><input value="auto (from execution)" disabled /></label>
+          <label :title="fieldHint('snapshot_planned_stop')"><span>{{ row.trading_mode === 'reactive' ? 'Stop (optional)' : 'Planned Stop' }} <span v-if="row.trading_mode !== 'reactive'" class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_stop" :class="{ 'field-missing': row.trading_mode !== 'reactive' && isSnapshotMissing(row, 'planned_stop') }" :placeholder="row.trading_mode === 'reactive' ? 'Optional' : (isSnapshotMissing(row, 'planned_stop') ? 'Required field' : '')" /></label>
+          <label :title="fieldHint('snapshot_planned_target')"><span>{{ row.trading_mode === 'reactive' ? 'Target (optional)' : 'Planned Target' }} <span v-if="row.trading_mode !== 'reactive'" class="required-asterisk">*</span></span><input type="number" step="0.0001" v-model.number="row.planned_target" :class="{ 'field-missing': row.trading_mode !== 'reactive' && isSnapshotMissing(row, 'planned_target') }" :placeholder="row.trading_mode === 'reactive' ? 'Optional' : (isSnapshotMissing(row, 'planned_target') ? 'Required field' : '')" /></label>
           <label :title="fieldHint('snapshot_planned_risk')"><span>Planned Risk (R) <span class="required-asterisk">*</span></span><input type="number" step="0.1" min="0.1" v-model.number="row.planned_risk_r" :class="{ 'field-missing': isSnapshotMissing(row, 'planned_risk_r') }" :placeholder="isSnapshotMissing(row, 'planned_risk_r') ? 'Required field' : ''" /></label>
         </div>
-        <div class="muted-copy" :class="confidenceClass(row.confidence_score)">Confidence signal: {{ confidenceSignal(row.confidence_score) }}</div>
-        <div class="section-title minor">Logic</div>
-        <div class="filter-action-row" style="margin-top:0;">
-          <button type="button" class="secondary small-btn" @click="toggleSnapshotLogic(row.local_id)">{{ expandedSnapshotLogic.includes(row.local_id) ? 'Hide Logic' : 'Show Logic' }}</button>
+        <div v-if="row.trading_mode === 'reactive'" class="journal-form-grid workspace-field-grid">
+          <label><span>Entry Reason</span><textarea v-model="row.entry_reason" rows="2" placeholder="Volume spike at resistance"></textarea></label>
+          <label><span>Stop Logic</span><textarea v-model="row.stop_logic" rows="2" placeholder="below liquidity sweep"></textarea></label>
         </div>
-        <div v-if="expandedSnapshotLogic.includes(row.local_id)">
+        <div class="muted-copy" :class="confidenceClass(row.confidence_score)">Confidence signal: {{ confidenceSignal(row.confidence_score) }}</div>
+        <div v-if="row.trading_mode !== 'reactive'">
+          <div class="section-title minor">Logic</div>
           <div class="journal-form-grid workspace-field-grid">
             <label :title="fieldHint('snapshot_trigger_type')"><span>Trigger Type</span><select v-model="row.trigger_type"><option value="break_premarket_high">break_premarket_high</option><option value="volume_spike">volume_spike</option><option value="vwap_reclaim">vwap_reclaim</option><option value="custom">custom</option></select></label>
             <label :title="fieldHint('snapshot_invalidation_type')"><span>Invalidation Type</span><select v-model="row.invalidation_type"><option value="lose_vwap">lose_vwap</option><option value="fail_breakout_2m">fail_breakout_2m</option><option value="break_structure">break_structure</option><option value="custom">custom</option></select></label>
@@ -312,6 +363,7 @@
         <div class="save-error" v-if="snapshotErrors[row.local_id]">{{ snapshotErrors[row.local_id] }}</div>
         <div class="filter-action-row">
           <button @click="saveSnapshot(row)" :disabled="savingSnapshotId === row.local_id">{{ savingSnapshotId === row.local_id ? 'Saving...' : 'Save Snapshot' }}</button>
+        </div>
         </div>
       </div>
       <div class="filter-action-row">
@@ -607,7 +659,7 @@ const sessionDropdownOpen = ref(false)
 const watchlistText = ref('')
 const pretradeChecklist = ref({ market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false })
 const snapshotForms = ref([])
-const expandedSnapshotLogic = ref([])
+const expandedSnapshotCards = ref([])
 const savingPretrade = ref(false)
 const savingSnapshotId = ref(null)
 const pretradeError = ref('')
@@ -623,7 +675,18 @@ const compareDimension = ref('by_strategy')
 const compareLeftKey = ref('')
 const compareRightKey = ref('')
 const confirmDialog = ref({ visible: false, title: 'Confirm', message: '', confirmText: 'Confirm', cancelText: 'Cancel' })
+const actionNotice = ref('')
 let confirmResolver = null
+let actionNoticeTimer = null
+
+function showActionNotice(message) {
+  actionNotice.value = message
+  if (actionNoticeTimer) clearTimeout(actionNoticeTimer)
+  actionNoticeTimer = setTimeout(() => {
+    actionNotice.value = ''
+    actionNoticeTimer = null
+  }, 2200)
+}
 
 const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
@@ -685,7 +748,7 @@ const FIELD_HINTS = {
   snapshot_symbol: '该 Snapshot 对应的交易标的代码。',
   snapshot_strategy: '该 Setup 的策略名称或方向。',
   snapshot_direction: '计划方向：做多(long)或做空(short)。',
-  snapshot_setup_type: '该 Setup 的类型标签。',
+  snapshot_setup_type: '统一 Setup 字段（可选预设、标签或自定义）。',
   snapshot_timeframe: '该 Setup 主要参考的时间周期。',
   snapshot_confidence: '1-10分：该 Setup 的主观把握度。',
   snapshot_setup_tag: '从 Setup 标签库中选择对应类型（可选）。',
@@ -725,6 +788,7 @@ function formatOpenedAt(value) {
 function isSnapshotMissing(row, key) {
   if (!snapshotSubmitAttempted.value[row.local_id]) return false
   if (key === 'planned_risk_r') return !(Number(row.planned_risk_r) > 0)
+  if (key === 'setup_merged') return !String(row.setup_merged || '').trim()
   if (['planned_entry', 'planned_stop', 'planned_target'].includes(key)) return row[key] == null || row[key] === ''
   return !row[key]
 }
@@ -818,6 +882,32 @@ const selectedSessionLabel = computed(() => {
   if (!pretradeSessions.value.length) return 'Select sessions'
   return pretradeSessions.value.join(', ')
 })
+const watchlistOptions = computed(() => {
+  const items = watchlistText.value.split(',').map((v) => v.trim().toUpperCase()).filter(Boolean)
+  return Array.from(new Set(items))
+})
+
+function parseSnapshotNotes(snapshotNotes = '') {
+  const text = String(snapshotNotes || '')
+  const modeMatch = text.match(/\[MODE\]\s*(planned|reactive)/i)
+  const entryReasonMatch = text.match(/\[ENTRY_REASON\]\s*(.+)/i)
+  const stopLogicMatch = text.match(/\[STOP_LOGIC\]\s*(.+)/i)
+  return {
+    trading_mode: modeMatch ? modeMatch[1].toLowerCase() : 'planned',
+    entry_reason: entryReasonMatch ? entryReasonMatch[1].trim() : '',
+    stop_logic: stopLogicMatch ? stopLogicMatch[1].trim() : '',
+  }
+}
+
+function toSnapshotNotes(row) {
+  const mode = row.trading_mode === 'reactive' ? 'reactive' : 'planned'
+  const lines = [`[MODE] ${mode}`]
+  if (mode === 'reactive') {
+    if (row.entry_reason) lines.push(`[ENTRY_REASON] ${row.entry_reason}`)
+    if (row.stop_logic) lines.push(`[STOP_LOGIC] ${row.stop_logic}`)
+  }
+  return lines.join('\n')
+}
 
 const filteredTimeline = computed(() => {
   return (dailyTimeline.value || []).filter((item) => {
@@ -832,10 +922,10 @@ const filteredTimeline = computed(() => {
 
 function toggleCard(id) { expandedCards.value = expandedCards.value.includes(id) ? expandedCards.value.filter((v) => v !== id) : [...expandedCards.value, id] }
 function togglePosition(id) { expandedPositions.value = expandedPositions.value.includes(id) ? expandedPositions.value.filter((v) => v !== id) : [...expandedPositions.value, id] }
-function toggleSnapshotLogic(localId) {
-  expandedSnapshotLogic.value = expandedSnapshotLogic.value.includes(localId)
-    ? expandedSnapshotLogic.value.filter((v) => v !== localId)
-    : [...expandedSnapshotLogic.value, localId]
+function toggleSnapshotCard(localId) {
+  expandedSnapshotCards.value = expandedSnapshotCards.value.includes(localId)
+    ? expandedSnapshotCards.value.filter((v) => v !== localId)
+    : [...expandedSnapshotCards.value, localId]
 }
 function openDatePicker(event) {
   const dateInput = event?.target
@@ -1072,6 +1162,7 @@ async function saveCardReview(tradeGroupId) {
     await saveTradeReview(payload)
     tradeSaveErrors.value[tradeGroupId] = ''
     await loadQueue()
+    showActionNotice('Trade Review 保存成功')
   } catch (error) {
     const data = error?.response?.data || {}
     tradeSaveErrors.value[tradeGroupId] = Object.entries(data)
@@ -1090,6 +1181,9 @@ function normalizeScore(value) {
 }
 
 function buildLocalSnapshot(item = {}) {
+  const parsedNotes = parseSnapshotNotes(item.snapshot_notes)
+  const matchedSetupTag = (setupTags.value || []).find((tag) => Number(tag.id) === Number(item.setup))
+  const mergedSetup = item.setup_type || matchedSetupTag?.name || ''
   return {
     local_id: item.id || `${Date.now()}-${Math.random()}`,
     id: item.id || null,
@@ -1099,6 +1193,7 @@ function buildLocalSnapshot(item = {}) {
     strategy: item.strategy || '',
     direction: item.direction || 'long',
     setup_type: item.setup_type || 'breakout',
+    setup_merged: mergedSetup,
     timeframe: item.timeframe || '5m',
     confidence_score: item.confidence_score,
     setup: item.setup || null,
@@ -1110,6 +1205,9 @@ function buildLocalSnapshot(item = {}) {
     planned_stop: item.planned_stop,
     planned_target: item.planned_target,
     planned_risk_r: item.planned_risk_r,
+    trading_mode: parsedNotes.trading_mode || 'planned',
+    entry_reason: parsedNotes.entry_reason || '',
+    stop_logic: parsedNotes.stop_logic || '',
     checklist_passed: item.checklist_passed ?? false,
     snapshot_notes: item.snapshot_notes || '',
   }
@@ -1126,14 +1224,14 @@ async function loadPretrade() {
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false, ...(existing.pre_trade_checklist || {}) }
     const snaps = await fetchSetupSnapshots({ pretrade_plan: existing.id, page_size: 50 })
     snapshotForms.value = (snaps.data?.results || snaps.data || []).map((item) => buildLocalSnapshot(item))
-    expandedSnapshotLogic.value = []
+    expandedSnapshotCards.value = snapshotForms.value.map((row) => row.local_id)
   } else {
     pretradeForm.value = { id: null, plan_date: pretradeDate.value, session: 'premarket', market_regime: '', watchlist: [], catalysts: '', game_plan: '', pre_trade_checklist: {}, risk_budget_r: null, notes: '' }
     pretradeSessions.value = ['premarket']
     watchlistText.value = ''
     pretradeChecklist.value = { market_trending: false, volume_above_average: false, no_major_news_risk: false, clean_structure: false }
     snapshotForms.value = [buildLocalSnapshot()]
-    expandedSnapshotLogic.value = []
+    expandedSnapshotCards.value = snapshotForms.value.map((row) => row.local_id)
   }
   syncLabelTitleTargets()
 }
@@ -1174,13 +1272,16 @@ async function savePretrade(withConfirm = true) {
     const res = pretradeForm.value.id ? await updatePretradePlan(pretradeForm.value.id, payload) : await savePretradePlan(payload)
     pretradeForm.value = res.data
     if (!snapshotForms.value.length) snapshotForms.value = [buildLocalSnapshot()]
+    showActionNotice('Pre-Trade Plan 保存成功')
   } finally {
     savingPretrade.value = false
   }
 }
 
 function addSnapshotRow() {
-  snapshotForms.value.push(buildLocalSnapshot())
+  const nextRow = buildLocalSnapshot()
+  snapshotForms.value.push(nextRow)
+  expandedSnapshotCards.value = [...expandedSnapshotCards.value, nextRow.local_id]
 }
 
 async function removeSnapshotRow(row) {
@@ -1193,7 +1294,12 @@ async function removeSnapshotRow(row) {
   if (!ok) return
   if (row.id) await deleteSetupSnapshot(row.id)
   snapshotForms.value = snapshotForms.value.filter((item) => item.local_id !== row.local_id)
+  expandedSnapshotCards.value = expandedSnapshotCards.value.filter((id) => id !== row.local_id)
   if (!snapshotForms.value.length) snapshotForms.value = [buildLocalSnapshot()]
+  if (snapshotForms.value.length && !expandedSnapshotCards.value.length) {
+    expandedSnapshotCards.value = snapshotForms.value.map((item) => item.local_id)
+  }
+  showActionNotice('Snapshot 删除成功')
 }
 
 async function removeLastSnapshotRow() {
@@ -1227,16 +1333,30 @@ async function saveSnapshot(row) {
     snapshotErrors.value[row.local_id] = `Planned risk would exceed budget (${nextUsed.toFixed(2)}R / ${budget.toFixed(2)}R).`
     return
   }
-  if (!row.strategy || row.planned_entry == null || row.planned_stop == null || row.planned_target == null) {
-    snapshotErrors.value[row.local_id] = 'Strategy, planned entry, stop, target, and planned risk are required.'
+  if (!row.symbol || !String(row.setup_merged || '').trim()) {
+    snapshotErrors.value[row.local_id] = 'Symbol and Setup are required.'
+    return
+  }
+  if (row.trading_mode !== 'reactive' && (row.planned_entry == null || row.planned_stop == null || row.planned_target == null)) {
+    snapshotErrors.value[row.local_id] = 'For Planned Trade mode, entry, stop, target, and planned risk are required.'
     return
   }
   savingSnapshotId.value = row.local_id
   try {
     const payload = { ...row, pretrade_plan: pretradeForm.value.id }
+    const setupMatch = (setupTags.value || []).find((item) => String(item.name || '').toLowerCase() === String(row.setup_merged || '').trim().toLowerCase())
+    payload.setup = setupMatch ? setupMatch.id : null
+    payload.setup_type = String(row.setup_merged || '').trim()
+    payload.snapshot_notes = toSnapshotNotes(row)
+    if (row.trading_mode === 'reactive') payload.planned_entry = null
+    delete payload.setup_merged
+    delete payload.trading_mode
+    delete payload.entry_reason
+    delete payload.stop_logic
     delete payload.local_id
     const res = row.id ? await updateSetupSnapshot(row.id, payload) : await saveSetupSnapshot(payload)
     Object.assign(row, buildLocalSnapshot(res.data))
+    showActionNotice('Snapshot 保存成功')
   } finally {
     savingSnapshotId.value = null
   }
@@ -1259,17 +1379,16 @@ const riskStatusClass = computed(() => {
   if (usedRiskPct.value >= 75) return 'risk-warning'
   return 'risk-safe'
 })
-const riskProgressBar = computed(() => {
-  const filled = Math.round(usedRiskPct.value / 10)
-  return `${'█'.repeat(filled)}${'░'.repeat(Math.max(0, 10 - filled))}`
-})
 const checklistKeys = ['market_trending', 'volume_above_average', 'no_major_news_risk', 'clean_structure']
 const checklistTotal = checklistKeys.length
 const checklistPassCount = computed(() => checklistKeys.reduce((sum, key) => sum + (pretradeChecklist.value[key] ? 1 : 0), 0))
 const pretradeChecklistPassed = computed(() => checklistPassCount.value === checklistTotal)
 
 function snapshotIsComplete(row) {
-  return Boolean(row.strategy && row.planned_entry != null && row.planned_stop != null && row.planned_target != null && Number(row.planned_risk_r || 0) > 0)
+  const hasBasics = Boolean(row.symbol && String(row.setup_merged || '').trim() && Number(row.planned_risk_r || 0) > 0)
+  if (!hasBasics) return false
+  if (row.trading_mode === 'reactive') return true
+  return row.planned_entry != null && row.planned_stop != null && row.planned_target != null
 }
 
 async function loadQueuePretradeStatus() {
@@ -1333,6 +1452,7 @@ function removeTradeScreenshot(tradeGroupId, index) {
     const arr = [...(tradeReviewForms.value[tradeGroupId].screenshots || [])]
     arr.splice(index, 1)
     tradeReviewForms.value[tradeGroupId].screenshots = arr
+    showActionNotice('截图删除成功')
   })
 }
 
@@ -1348,6 +1468,7 @@ async function saveCheckpoint(tradeGroupId) {
   try {
     await savePositionCheckpoint({ ...positionForms.value[tradeGroupId] })
     await loadQueue()
+    showActionNotice('Checkpoint 保存成功')
   } finally {
     savingPosition.value = null
   }
@@ -1378,6 +1499,7 @@ function removeDailyScreenshot(index) {
     const arr = [...(form.value.image_urls || [])]
     arr.splice(index, 1)
     form.value.image_urls = arr
+    showActionNotice('截图删除成功')
   })
 }
 
@@ -1396,6 +1518,7 @@ async function saveDailyReview(mode = 'draft') {
     payload.max_daily_loss_respected = maxLossSelection.value === '' ? null : maxLossSelection.value === 'true'
     await createDailyReview(payload)
     await loadQueue()
+    showActionNotice(mode === 'completed' ? 'Daily Review 标记完成成功' : 'Daily Review 草稿保存成功')
   } finally {
     savingDaily.value = false
   }
@@ -1426,10 +1549,26 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocumentClick)
+  if (actionNoticeTimer) clearTimeout(actionNoticeTimer)
 })
 </script>
 
 <style scoped>
+.action-toast {
+  position: sticky;
+  top: 10px;
+  z-index: 50;
+  width: fit-content;
+  margin: 0 auto 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #ecfdf5;
+  color: #166534;
+  border: 1px solid #86efac;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+  font-weight: 600;
+}
+
 .workspace-summary-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 220px));
   gap: 10px 14px;
@@ -1603,18 +1742,36 @@ onBeforeUnmount(() => {
   padding: 14px;
 }
 
+.snapshot-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.pretrade-textarea-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px 12px;
+}
+
 .pretrade-checklist-grid {
   margin-top: 8px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 6px 10px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
+  justify-content: start;
+  gap: 6px 8px;
 }
 
 .checklist-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 6px 10px;
+  width: max-content;
+  max-width: 100%;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
 }
@@ -1639,6 +1796,17 @@ onBeforeUnmount(() => {
 .trade-review-form-grid :deep(select),
 .trade-review-text-grid :deep(textarea) {
   padding: 8px 10px;
+}
+
+.workspace-field-grid :deep(input[type='checkbox']),
+.workspace-field-grid :deep(input[type='radio']),
+.workspace-summary-grid :deep(input[type='checkbox']),
+.workspace-summary-grid :deep(input[type='radio']),
+.timeline-filter-grid :deep(input[type='checkbox']),
+.timeline-filter-grid :deep(input[type='radio']),
+.trade-review-form-grid :deep(input[type='checkbox']),
+.trade-review-form-grid :deep(input[type='radio']) {
+  padding: 0;
 }
 
 .multi-select-wrap {
@@ -1673,7 +1841,38 @@ onBeforeUnmount(() => {
 .multi-select-option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.multi-select-option :deep(input[type='checkbox']),
+.checklist-item :deep(input[type='checkbox']) {
+  width: auto;
+  min-width: 14px;
+  height: 14px;
+  padding: 0;
+  margin: 0;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.trading-mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.mode-option {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.mode-option :deep(input[type='radio']) {
+  width: auto;
+  margin: 0;
+  padding: 0;
 }
 
 .trade-review-text-grid :deep(textarea) {
@@ -1764,12 +1963,21 @@ onBeforeUnmount(() => {
 
 .risk-dashboard {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(90px, max-content));
+  justify-content: start;
+  gap: 4px 12px;
   margin-top: 8px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid #d1d5db;
+}
+
+.risk-dashboard > :first-child {
+  margin-right: 8px;
+}
+
+.risk-progress {
+  grid-column: 1 / -1;
 }
 
 .risk-safe {
@@ -1801,6 +2009,8 @@ onBeforeUnmount(() => {
 .status-bad-block {
   margin-top: 6px;
   padding: 6px 10px;
+  width: fit-content;
+  min-width: 140px;
   border-radius: 8px;
   border: 1px solid transparent;
 }
@@ -1817,7 +2027,7 @@ onBeforeUnmount(() => {
 
 .risk-progress {
   grid-column: 1 / -1;
-  height: 8px;
+  height: 18px;
   border-radius: 999px;
   background: #e5e7eb;
   overflow: hidden;
@@ -1826,6 +2036,18 @@ onBeforeUnmount(() => {
 .risk-progress-fill {
   height: 100%;
   background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 44px;
+  padding-right: 8px;
+}
+
+.risk-progress-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.45);
 }
 
 .logic-toggle-row {
