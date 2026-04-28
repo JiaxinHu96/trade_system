@@ -1606,15 +1606,17 @@ onBeforeUnmount(() => {
 .pretrade-checklist-grid {
   margin-top: 8px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 6px 10px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 220px));
+  justify-content: start;
+  gap: 6px 8px;
 }
 
 .checklist-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 6px 10px;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
 }
@@ -1639,6 +1641,17 @@ onBeforeUnmount(() => {
 .trade-review-form-grid :deep(select),
 .trade-review-text-grid :deep(textarea) {
   padding: 8px 10px;
+}
+
+.workspace-field-grid :deep(input[type='checkbox']),
+.workspace-field-grid :deep(input[type='radio']),
+.workspace-summary-grid :deep(input[type='checkbox']),
+.workspace-summary-grid :deep(input[type='radio']),
+.timeline-filter-grid :deep(input[type='checkbox']),
+.timeline-filter-grid :deep(input[type='radio']),
+.trade-review-form-grid :deep(input[type='checkbox']),
+.trade-review-form-grid :deep(input[type='radio']) {
+  padding: 0;
 }
 
 .multi-select-wrap {
@@ -1673,7 +1686,8 @@ onBeforeUnmount(() => {
 .multi-select-option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 6px;
 }
 
 .trade-review-text-grid :deep(textarea) {
@@ -1764,12 +1778,22 @@ onBeforeUnmount(() => {
 
 .risk-dashboard {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(90px, max-content));
+  justify-content: start;
+  gap: 4px 12px;
   margin-top: 8px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid #d1d5db;
+}
+
+.risk-dashboard > :first-child {
+  margin-right: 8px;
+}
+
+.risk-progress,
+.risk-dashboard .muted-copy {
+  grid-column: 1 / -1;
 }
 
 .risk-safe {
