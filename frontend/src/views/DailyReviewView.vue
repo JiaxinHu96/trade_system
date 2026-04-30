@@ -1593,7 +1593,7 @@ onBeforeUnmount(() => {
 .workspace-summary-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 220px));
   gap: 10px 14px;
-  align-items: end;
+  align-items: stretch;
 }
 
 .review-workspace-page {
@@ -1638,7 +1638,8 @@ onBeforeUnmount(() => {
   border: 1px solid #dbe3f4;
   border-radius: 10px;
   padding: 10px 12px;
-  min-height: 82px;
+  min-height: 132px;
+  height: 132px;
   display: grid;
   align-content: start;
   gap: 6px;
