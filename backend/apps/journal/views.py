@@ -131,14 +131,17 @@ class DailyReviewViewSet(viewsets.ModelViewSet):
             if not review:
                 return 0
             checks = [
+                bool(review.strategy),
                 bool(review.setup_id),
                 bool(review.thesis),
                 review.entry_quality is not None,
                 review.exit_quality is not None,
                 review.risk_management is not None,
-                bool(review.what_i_did_well),
+                review.followed_plan is not None,
                 bool(review.what_to_improve),
                 bool(review.final_grade),
+                review.mistake_tags.count() > 0,
+                bool(review.screenshots),
             ]
             return int(round((sum(checks) / len(checks)) * 100))
 
