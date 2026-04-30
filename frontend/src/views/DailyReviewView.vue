@@ -1143,16 +1143,15 @@ async function saveCardReview(tradeGroupId) {
     const payload = { ...tradeReviewForms.value[tradeGroupId] }
     const card = (queue.value.closed_trades || []).find((item) => item.trade_group_id === tradeGroupId)
     const selectedOpt = (card?.snapshot_options || []).find((opt) => Number(opt.id) === Number(payload.selected_snapshot))
-    if (selectedOpt && String(selectedOpt.symbol || '').toLowerCase() !== String(card?.symbol || '').toLowerCase()) {
+    if (selectedOpt && !isCompatibleSymbol(selectedOpt.symbol, card?.symbol)) {
       const mismatchOk = await askConfirm({
         title: 'Linked Snapshot Mismatch',
-        message: `所选 Snapshot 的 symbol(${selectedOpt.symbol || '-'}) 与交易 symbol(${card?.symbol || '-'}) 不一致，确认继续保存吗？`,
+        message: `所选 Snapshot 的 symbol(${selectedOpt.symbol || '-'}) 与交易 symbol(${card?.symbol || '-'}) 可能不一致，确认继续保存吗？`,
         confirmText: 'Continue Save',
         cancelText: 'Back',
       })
       if (!mismatchOk) return
-      payload.selected_snapshot = null
-      tradeSaveWarnings.value[tradeGroupId] = '已按确认结果忽略不匹配的 Linked Snapshot 并继续保存。'
+      tradeSaveWarnings.value[tradeGroupId] = '已按确认结果继续保存 Linked Snapshot。若后端判定不匹配，关联可能不会生效。'
     } else {
       tradeSaveWarnings.value[tradeGroupId] = payload.selected_snapshot
         ? ''
@@ -1173,6 +1172,14 @@ async function saveCardReview(tradeGroupId) {
   } finally {
     savingTrade.value = null
   }
+}
+
+
+function isCompatibleSymbol(snapshotSymbol, tradeSymbol) {
+  const left = String(snapshotSymbol || '').trim().toLowerCase()
+  const right = String(tradeSymbol || '').trim().toLowerCase()
+  if (!left || !right) return false
+  return left === right || left.startsWith(right) || right.startsWith(left)
 }
 
 function normalizeScore(value) {
