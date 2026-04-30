@@ -30,7 +30,7 @@
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Open Positions</div><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Daily Review</div><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
-        <div class="stat-pill"><div class="stat-label">Completion</div><div class="stat-value medium">{{ completionRate }}%</div></div>
+        <div class="stat-pill"><div class="stat-label">Completion</div><div class="stat-value medium">{{ completionRate }}%</div><div class="muted-copy completion-summary-line">{{ completionSummary }}</div></div>
         <button @click="focusFirstPending" class="secondary" :disabled="!queuePretradeReady">Start Review</button>
         <div class="muted-copy summary-pretrade-note" v-if="!queuePretradeReady">{{ queuePretradeMessage }}</div>
       </div>
@@ -692,12 +692,24 @@ function showActionNotice(message) {
 
 const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
 
-const completionRate = computed(() => {
-  const total = (queue.value.summary.closed_trade_count || 0) + (queue.value.summary.open_position_count || 0) + 1
+const completionStats = computed(() => {
+  const closedTrades = queue.value.summary.closed_trade_count || 0
+  const openPositions = queue.value.summary.open_position_count || 0
+  const total = closedTrades + openPositions + 1
   const doneTrades = (queue.value.closed_trades || []).filter((t) => (t.review_completeness || 0) >= 80).length
   const donePositions = (queue.value.open_positions || []).filter((p) => p.latest_checkpoint_id).length
   const doneDaily = queue.value.summary.daily_review_completed ? 1 : 0
-  return total ? Math.round(((doneTrades + donePositions + doneDaily) / total) * 100) : 0
+  return { total, doneTrades, donePositions, doneDaily, completed: doneTrades + donePositions + doneDaily }
+})
+
+const completionRate = computed(() => {
+  const { total, completed } = completionStats.value
+  return total ? Math.round((completed / total) * 100) : 0
+})
+
+const completionSummary = computed(() => {
+  const { completed, total, doneTrades, donePositions, doneDaily } = completionStats.value
+  return `${completed}/${total} · T ${doneTrades} · P ${donePositions} · D ${doneDaily}`
 })
 
 const FIELD_HINTS = {
@@ -1581,7 +1593,7 @@ onBeforeUnmount(() => {
 .workspace-summary-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 220px));
   gap: 10px 14px;
-  align-items: end;
+  align-items: stretch;
 }
 
 .review-workspace-page {
@@ -1626,10 +1638,12 @@ onBeforeUnmount(() => {
   border: 1px solid #dbe3f4;
   border-radius: 10px;
   padding: 10px 12px;
-  min-height: 82px;
+  min-height: 132px;
+  height: 132px;
   display: grid;
   align-content: start;
   gap: 6px;
+  overflow: hidden;
 }
 
 .summary-pretrade-note {
@@ -1651,6 +1665,12 @@ onBeforeUnmount(() => {
 
 .workspace-summary-card .stat-label {
   color: #64748b;
+}
+
+.completion-summary-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tv-panel-tabs .tv-subtab {
