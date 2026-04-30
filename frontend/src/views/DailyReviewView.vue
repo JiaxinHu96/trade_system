@@ -30,7 +30,7 @@
         <div class="stat-pill"><div class="stat-label">Closed Trades</div><div class="stat-value medium">{{ queue.summary.closed_trade_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Open Positions</div><div class="stat-value medium">{{ queue.summary.open_position_count || 0 }}</div></div>
         <div class="stat-pill"><div class="stat-label">Daily Review</div><div class="stat-value medium">{{ queue.summary.daily_review_completed ? 'Done' : 'Pending' }}</div></div>
-        <div class="stat-pill"><div class="stat-label">Completion</div><div class="stat-value medium">{{ completionRate }}%</div><div class="muted-copy">{{ completionSummary }}</div></div>
+        <div class="stat-pill"><div class="stat-label">Completion</div><div class="stat-value medium">{{ completionRate }}%</div><div class="muted-copy completion-summary-line">{{ completionSummary }}</div></div>
         <button @click="focusFirstPending" class="secondary" :disabled="!queuePretradeReady">Start Review</button>
         <div class="muted-copy summary-pretrade-note" v-if="!queuePretradeReady">{{ queuePretradeMessage }}</div>
       </div>
@@ -709,7 +709,7 @@ const completionRate = computed(() => {
 
 const completionSummary = computed(() => {
   const { completed, total, doneTrades, donePositions, doneDaily } = completionStats.value
-  return `${completed}/${total} · Trades ${doneTrades} · Positions ${donePositions} · Daily ${doneDaily}`
+  return `${completed}/${total} · T ${doneTrades} · P ${donePositions} · D ${doneDaily}`
 })
 
 const FIELD_HINTS = {
@@ -1642,6 +1642,7 @@ onBeforeUnmount(() => {
   display: grid;
   align-content: start;
   gap: 6px;
+  overflow: hidden;
 }
 
 .summary-pretrade-note {
@@ -1663,6 +1664,12 @@ onBeforeUnmount(() => {
 
 .workspace-summary-card .stat-label {
   color: #64748b;
+}
+
+.completion-summary-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tv-panel-tabs .tv-subtab {
