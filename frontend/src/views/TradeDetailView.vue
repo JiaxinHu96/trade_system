@@ -24,40 +24,13 @@
 
         <div class="card">
           <div class="section-title">Trade Workspace</div>
-          <div class="tv-panel-tabs" style="margin-bottom: 12px;">
-            <button type="button" :class="['tv-subtab', { active: activePanel === 'timeline' }]" @click="activePanel = 'timeline'">Trade Timeline</button>
-            <button type="button" :class="['tv-subtab', { active: activePanel === 'review' }]" @click="activePanel = 'review'">Trade Review Edit</button>
-          </div>
-
-          <div v-if="activePanel === 'timeline'" class="muted-copy">
-            在此页下方查看完整成交时间线（Raw Executions）。
-          </div>
-
-          <div v-else>
-            <div class="journal-form-grid">
-              <label><span>Strategy</span><input v-model="reviewForm.strategy" /></label>
-              <label><span>Session</span><select v-model="reviewForm.session"><option value="">-</option><option>open</option><option>midday</option><option>close</option><option>overnight</option></select></label>
-              <label><span>Final Grade</span><select v-model="reviewForm.final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
-              <label><span>Realized R</span><input v-model="reviewForm.realized_r" type="number" step="0.01" /></label>
-            </div>
-            <div class="journal-form-grid">
-              <label><span>Entry quality (1-5)</span><input v-model.number="reviewForm.entry_quality" type="number" min="1" max="5" /></label>
-              <label><span>Exit quality (1-5)</span><input v-model.number="reviewForm.exit_quality" type="number" min="1" max="5" /></label>
-              <label><span>Risk mgmt (1-5)</span><input v-model.number="reviewForm.risk_management" type="number" min="1" max="5" /></label>
-              <label><span>Followed plan?</span><select v-model="followedPlanSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
-            </div>
-            <label><span>Thesis</span><textarea v-model="reviewForm.thesis" rows="2"></textarea></label>
-            <label><span>Entry trigger</span><textarea v-model="reviewForm.entry_trigger" rows="2"></textarea></label>
-            <label><span>Invalidation / Stop</span><textarea v-model="reviewForm.invalidation" rows="2"></textarea></label>
-            <label><span>Planned target</span><textarea v-model="reviewForm.planned_target" rows="2"></textarea></label>
-            <label><span>What I did well</span><textarea v-model="reviewForm.what_i_did_well" rows="2"></textarea></label>
-            <label><span>What to improve</span><textarea v-model="reviewForm.what_to_improve" rows="2"></textarea></label>
-            <div class="filter-action-row"><button @click="saveReview" :disabled="saving">{{ saving ? 'Saving...' : 'Save Trade Review' }}</button></div>
+          <div class="muted-copy">
+            Trade Review 统一在 Journal → Review Workspace（Trade Review Cards）中维护。此页仅保留时间线查看，避免双入口重复编辑。
           </div>
         </div>
       </div>
 
-      <div v-if="activePanel === 'timeline'" class="card">
+      <div class="card">
         <div class="section-title">Raw Executions</div>
         <table class="trade-table">
           <thead><tr><th>Time</th><th>Side</th><th>Qty</th><th>Price</th></tr></thead>
@@ -72,50 +45,24 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchTradeGroupDetail } from '../api/trades'
-import { saveTradeReview } from '../api/journal'
 import { formatNumber } from '../utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
-const saving = ref(false)
 const trade = ref(null)
-const activePanel = ref('timeline')
 const fmt = (v) => formatNumber(v)
-const reviewForm = ref({ trade_group: null, strategy: '', session: '', thesis: '', entry_trigger: '', invalidation: '', planned_target: '', entry_quality: null, exit_quality: null, risk_management: null, followed_plan: null, what_i_did_well: '', what_to_improve: '', realized_r: null, final_grade: '' })
-const followedPlanSelection = ref('')
-
-watch(followedPlanSelection, (value) => { reviewForm.value.followed_plan = value === '' ? null : value === 'true' })
-
-function populateReviewForm() {
-  const source = trade.value?.trade_review
-  reviewForm.value.trade_group = trade.value?.id
-  if (!source) return
-  Object.assign(reviewForm.value, source)
-  followedPlanSelection.value = source.followed_plan == null ? '' : String(source.followed_plan)
-}
 
 async function loadTrade() {
   loading.value = true
   try {
     const res = await fetchTradeGroupDetail(route.params.id)
     trade.value = res.data
-    populateReviewForm()
   } finally {
     loading.value = false
-  }
-}
-
-async function saveReview() {
-  saving.value = true
-  try {
-    await saveTradeReview(reviewForm.value)
-    await loadTrade()
-  } finally {
-    saving.value = false
   }
 }
 
