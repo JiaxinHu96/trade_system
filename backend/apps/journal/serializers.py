@@ -137,10 +137,14 @@ class TradeReviewSerializer(serializers.ModelSerializer):
         if not selected_snapshot:
             attrs['resolved_snapshot'] = None
             return attrs
-        if selected_snapshot.symbol.lower() != (trade_group.symbol or '').lower():
-            attrs['resolved_snapshot'] = None
-            return attrs
-        if selected_snapshot.pretrade_plan.plan_date != trade_group.trade_date:
+        snapshot_symbol = (selected_snapshot.symbol or '').strip().lower()
+        trade_symbol = (trade_group.symbol or '').strip().lower()
+        symbol_match = (
+            snapshot_symbol == trade_symbol
+            or snapshot_symbol.startswith(trade_symbol)
+            or trade_symbol.startswith(snapshot_symbol)
+        )
+        if not symbol_match:
             attrs['resolved_snapshot'] = None
             return attrs
         attrs['resolved_snapshot'] = selected_snapshot
