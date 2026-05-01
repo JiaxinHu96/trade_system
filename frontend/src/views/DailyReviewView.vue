@@ -142,57 +142,43 @@
 
     <section class="card workspace-secondary-card" ref="dailySectionRef">
       <div class="section-title">Daily Session Review</div>
-      <div class="tv-panel-tabs" style="margin-bottom: 10px;">
-        <button :class="['tv-subtab', { active: dailyAccordion === 'context' }]" @click="dailyAccordion='context'">Market Context</button>
-        <button :class="['tv-subtab', { active: dailyAccordion === 'execution' }]" @click="dailyAccordion='execution'">Execution Summary</button>
-        <button :class="['tv-subtab', { active: dailyAccordion === 'lesson' }]" @click="dailyAccordion='lesson'">Lessons & Plan</button>
-        <button :class="['tv-subtab', { active: dailyAccordion === 'tags' }]" @click="dailyAccordion='tags'">Tags & Save</button>
-      </div>
-
-      <div v-if="dailyAccordion === 'context'" class="journal-form-grid workspace-field-grid">
+      <div class="journal-form-grid workspace-field-grid" style="margin-bottom: 12px;">
         <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="form.market_regime" /></label>
         <label :title="fieldHint('daily_bias')"><span>Daily Bias</span><input v-model="form.daily_bias" /></label>
-        <label :title="fieldHint('session_focus')"><span>Session Focus</span><select v-model="form.session"><option value="">-</option><option>open</option><option>midday</option><option>close</option><option>overnight</option></select></label>
-        <label :title="fieldHint('market_condition')"><span>Market condition</span><select v-model="form.market_condition"><option value="">-</option><option>trend</option><option>range</option><option>breakout</option><option>reversal</option><option>news</option></select></label>
+        <label><span>Did market behave as expected?</span><select v-model="marketExpectedSelection"><option value="">-</option><option value="true">Yes</option><option value="false">No</option></select></label>
       </div>
 
-      <div v-if="dailyAccordion === 'execution'" class="journal-form-grid workspace-field-grid">
-        <label :title="fieldHint('strategy_focus')"><span>Strategy focus</span><input v-model="form.strategy" /></label>
-        <label :title="fieldHint('conviction')"><span>Conviction today (1-10)</span><input type="number" min="1" max="10" v-model.number="form.confidence_score" /></label>
+      <div class="journal-form-grid workspace-field-grid" style="margin-bottom: 12px;">
         <label :title="fieldHint('discipline')"><span>Discipline (1-10)</span><input type="number" min="1" max="10" v-model.number="form.discipline_score" /></label>
-        <label :title="fieldHint('emotional_control')"><span>Emotional control (1-10)</span><input type="number" min="1" max="10" v-model.number="form.emotional_control_score" /></label>
-        <label :title="fieldHint('focus_score')"><span>Focus (1-5)</span><input type="number" min="1" max="5" v-model.number="form.focus_score" /></label>
-        <label :title="fieldHint('max_daily_loss')"><span>Max daily loss respected</span><select v-model="maxLossSelection"><option value="">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
+        <label><span>Overtrading?</span><select v-model="form.overtrading"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
+        <label :title="fieldHint('followed_plan')"><span>Followed plan?</span><select v-model="form.followed_plan"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
       </div>
 
-      <div v-if="dailyAccordion === 'lesson'" class="journal-text-grid">
+      <div :title="fieldHint('daily_mistake_tags')"><span>Daily Mistake Tags</span><div class="chip-wrap">
+        <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (form.mistake_tags || []).includes(tag.id) }]" @click="toggleDailyMistakeTag(tag.id)">{{ tag.name }}</button>
+      </div></div>
+      <label :title="fieldHint('daily_screenshots')">
+        <span>Daily Session Screenshots</span>
+        <div class="helper-row">
+          <input type="file" accept="image/*" multiple @change="uploadDailyScreenshots" />
+          <span class="muted-copy" v-if="uploadingDailyImage">Uploading...</span>
+        </div>
+      </label>
+      <div v-if="form.image_urls?.length" class="image-grid compact-image-grid">
+        <div v-for="(url, idx) in form.image_urls" :key="`${url}-${idx}`" class="image-tile">
+          <img :src="url" alt="daily screenshot" class="image-preview" />
+          <button type="button" class="secondary small-btn" @click="removeDailyScreenshot(idx)">Remove</button>
+        </div>
+      </div>
+      <div class="journal-text-grid">
         <label :title="fieldHint('market_summary')"><span>Market Summary</span><textarea v-model="form.market_summary" rows="3"></textarea></label>
         <label :title="fieldHint('biggest_mistake')"><span>Biggest Mistake</span><textarea v-model="form.biggest_mistake" rows="3"></textarea></label>
         <label :title="fieldHint('main_lesson')"><span>Main Lesson</span><textarea v-model="form.lessons" rows="3"></textarea></label>
         <label :title="fieldHint('tomorrow_plan')"><span>Tomorrow Plan</span><textarea v-model="form.next_day_plan" rows="3"></textarea></label>
       </div>
-
-      <div v-if="dailyAccordion === 'tags'">
-        <div :title="fieldHint('daily_mistake_tags')"><span>Daily Mistake Tags</span><div class="chip-wrap">
-          <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (form.mistake_tags || []).includes(tag.id) }]" @click="toggleDailyMistakeTag(tag.id)">{{ tag.name }}</button>
-        </div></div>
-        <label :title="fieldHint('daily_screenshots')">
-          <span>Daily Session Screenshots</span>
-          <div class="helper-row">
-            <input type="file" accept="image/*" multiple @change="uploadDailyScreenshots" />
-            <span class="muted-copy" v-if="uploadingDailyImage">Uploading...</span>
-          </div>
-        </label>
-        <div v-if="form.image_urls?.length" class="image-grid compact-image-grid">
-          <div v-for="(url, idx) in form.image_urls" :key="`${url}-${idx}`" class="image-tile">
-            <img :src="url" alt="daily screenshot" class="image-preview" />
-            <button type="button" class="secondary small-btn" @click="removeDailyScreenshot(idx)">Remove</button>
-          </div>
-        </div>
-        <div class="filter-action-row">
-          <button @click="saveDailyReview('draft')" :disabled="savingDaily">{{ savingDaily ? 'Saving...' : 'Save Draft' }}</button>
-          <button class="secondary" @click="saveDailyReview('completed')" :disabled="savingDaily">Mark Complete</button>
-        </div>
+      <div class="filter-action-row">
+        <button @click="saveDailyReview('draft')" :disabled="savingDaily">{{ savingDaily ? 'Saving...' : 'Save Draft' }}</button>
+        <button class="secondary" @click="saveDailyReview('completed')" :disabled="savingDaily">Mark Complete</button>
       </div>
     </section>
 
@@ -625,7 +611,6 @@ import {
 const queueDate = ref(new Date().toISOString().slice(0, 10))
 const journalTab = ref('pretrade')
 const queue = ref({ summary: {}, closed_trades: [], open_positions: [] })
-const dailyAccordion = ref('context')
 const expandedCards = ref([])
 const expandedPositions = ref([])
 const tradeReviewForms = ref({})
@@ -670,6 +655,8 @@ const pretradeSubmitAttempted = ref(false)
 const snapshotSubmitAttempted = ref({})
 const queuePretradeReady = ref(true)
 const queuePretradeMessage = ref('')
+const queuePretradePlan = ref(null)
+const marketExpectedSelection = ref('')
 const analytics = ref({ by_strategy: [], by_session: [], by_symbol: [], strategy_edge_ranking: [], mistake_impact: [], plan_adherence: {}, insights: [] })
 const loadingAnalytics = ref(false)
 const analyticsError = ref('')
@@ -690,7 +677,7 @@ function showActionNotice(message) {
   }, 2200)
 }
 
-const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] })
+const form = ref({ review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: [], session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, followed_plan: null, overtrading: null, market_behaved_as_expected: null, mistake_tags: [], image_urls: [] })
 
 const completionStats = computed(() => {
   const closedTrades = queue.value.summary.closed_trade_count || 0
@@ -1023,8 +1010,9 @@ function hydratePositionForms(positions) {
 
 function hydrateDailyReview(dailyReview) {
   if (!dailyReview) {
-    form.value = { review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id), session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, mistake_tags: [], image_urls: [] }
+    form.value = { review_date: queueDate.value, review_status: 'draft', strategy: '', market_regime: '', daily_bias: '', market_summary: '', biggest_mistake: '', lessons: '', next_day_plan: '', related_trade_groups: queue.value.closed_trades.map((item) => item.trade_group_id), session: '', market_condition: '', confidence_score: null, discipline_score: null, emotional_control_score: null, focus_score: null, max_daily_loss_respected: null, followed_plan: null, overtrading: null, market_behaved_as_expected: null, mistake_tags: [], image_urls: [] }
     maxLossSelection.value = ''
+    marketExpectedSelection.value = ''
     return
   }
   form.value = {
@@ -1045,10 +1033,14 @@ function hydrateDailyReview(dailyReview) {
     emotional_control_score: dailyReview.emotional_control_score,
     focus_score: dailyReview.focus_score,
     max_daily_loss_respected: dailyReview.max_daily_loss_respected,
+    followed_plan: dailyReview.followed_plan ?? null,
+    overtrading: dailyReview.overtrading ?? null,
+    market_behaved_as_expected: dailyReview.market_behaved_as_expected ?? null,
     mistake_tags: dailyReview.mistake_tags || [],
     image_urls: (dailyReview.images || []).map((item) => item.image_url),
   }
   maxLossSelection.value = dailyReview.max_daily_loss_respected == null ? '' : String(dailyReview.max_daily_loss_respected)
+  marketExpectedSelection.value = dailyReview.market_behaved_as_expected == null ? '' : String(dailyReview.market_behaved_as_expected)
 }
 
 async function loadMetaTags() {
@@ -1415,6 +1407,11 @@ function snapshotIsComplete(row) {
 async function loadQueuePretradeStatus() {
   const res = await fetchPretradePlans({ date: queueDate.value, page_size: 1 })
   const plan = (res.data?.results || res.data || [])[0]
+  queuePretradePlan.value = plan || null
+  if (plan) {
+    if (!form.value.market_regime) form.value.market_regime = plan.market_regime || ''
+    if (!form.value.daily_bias) form.value.daily_bias = plan.daily_bias || plan.session || ''
+  }
   if (!plan || !plan.market_regime || !(Number(plan.risk_budget_r) > 0)) {
     queuePretradeReady.value = false
     queuePretradeMessage.value = 'Complete Pre-Trade Plan (market regime + risk budget + snapshots) before Start Review.'
@@ -1537,6 +1534,7 @@ async function saveDailyReview(mode = 'draft') {
     const payload = { ...form.value, review_date: queueDate.value }
     payload.review_status = mode
     payload.max_daily_loss_respected = maxLossSelection.value === '' ? null : maxLossSelection.value === 'true'
+    payload.market_behaved_as_expected = marketExpectedSelection.value === '' ? null : marketExpectedSelection.value === 'true'
     await createDailyReview(payload)
     await loadQueue()
     showActionNotice(mode === 'completed' ? 'Daily Review 标记完成成功' : 'Daily Review 草稿保存成功')
