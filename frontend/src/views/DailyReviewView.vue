@@ -42,14 +42,15 @@
       <div class="trade-card-grid">
         <div v-for="card in queue.closed_trades" :key="card.trade_group_id" class="journal-entry-card trade-review-card">
           <div class="trade-review-head">
-            <div>
-              <div><strong>{{ card.symbol }}</strong> <span :class="['timeline-pnl-pill', card.realized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative']">{{ card.realized_pnl }}</span> <span :class="['badge', tradeStatusClass(card.status)]">{{ card.status }}</span></div>
-              <div class="muted-copy">
-                Hold {{ card.hold_minutes || '-' }}m ·
-                <span class="metric-with-tip">Exec {{ card.executions_count }}<span class="metric-tip">Exec = 该交易时间窗内的成交笔数（Raw Executions count）。</span></span> ·
-                <span class="metric-with-tip">Shots {{ card.screenshots_count }}<span class="metric-tip">Shots = 该笔复盘上传的截图数量。</span></span>
+            <div class="review-head-main">
+              <div class="review-title-row"><strong>{{ card.symbol }}</strong> <span :class="['timeline-pnl-pill', card.realized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative']">{{ card.realized_pnl }}</span> <span :class="['badge', tradeStatusClass(card.status)]">{{ card.status }}</span></div>
+              <div class="summary-chip-row">
+                <span class="badge" :class="card.realized_pnl >= 0 ? 'badge-profit' : 'badge-loss'">R: {{ card.trade_review?.realized_r ?? '-' }}</span>
+                <span class="badge">Mistake: {{ card.mistake_tags?.[0] || 'No mistake' }}</span>
+                <span class="badge">Rule: {{ card.broke_stop_rule ? 'Stop rule' : 'None' }}</span>
+                <span class="badge">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }}</span>
               </div>
-              <div class="muted-copy">Setup: {{ card.setup_name || '-' }} · Grade: {{ card.grade || '-' }}</div>
+              <div class="muted-copy">Hold {{ card.hold_minutes || '-' }}m · Exec {{ card.executions_count }} · Shots {{ card.screenshots_count }}</div>
               <div class="chip-wrap" v-if="(card.mistake_tags || []).length">
                 <span v-for="tag in card.mistake_tags" :key="`mist-${card.trade_group_id}-${tag}`" class="badge badge-loss">{{ tag }}</span>
               </div>
@@ -77,7 +78,6 @@
 
           <div v-if="expandedCards.includes(card.trade_group_id)" class="accordion-body compact-trade-body">
             <div class="journal-form-grid trade-review-form-grid">
-              <label :title="fieldHint('trade_strategy')"><span>Strategy</span><input v-model="tradeReviewForms[card.trade_group_id].strategy" /></label>
               <label :title="fieldHint('setup')"><span>Setup</span>
                 <select v-model="tradeReviewForms[card.trade_group_id].setup">
                   <option :value="null">-</option>
@@ -93,24 +93,20 @@
                 </select>
               </label>
               <label :title="fieldHint('grade')"><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
-              <label :title="fieldHint('would_take_again')"><span>Would take again</span><select v-model="tradeReviewForms[card.trade_group_id].would_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
-              <label :title="fieldHint('entry_q')"><span>Entry Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].entry_quality" /></label>
-              <label :title="fieldHint('exit_q')"><span>Exit Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].exit_quality" /></label>
-              <label :title="fieldHint('risk_q')"><span>Risk Q</span><input type="number" min="1" max="5" v-model.number="tradeReviewForms[card.trade_group_id].risk_management" /></label>
-              <label :title="fieldHint('followed_plan')"><span>Followed plan</span><select v-model="tradeReviewForms[card.trade_group_id].followed_plan"><option :value="null">-</option><option :value="true">Yes</option><option :value="false">No</option></select></label>
-              <label :title="fieldHint('primary_mistake_type')"><span>Primary mistake type</span><select v-model="tradeReviewForms[card.trade_group_id].primary_mistake_type"><option value="none">none</option><option value="discipline">discipline</option><option value="execution">execution</option><option value="risk">risk</option><option value="strategy">strategy</option><option value="psychology">psychology</option><option value="process">process</option></select></label>
+              <label :title="fieldHint('plan_follow_take_again')"><span>Plan follow</span><select v-model="tradeReviewForms[card.trade_group_id].plan_follow_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
+              <label :title="fieldHint('realized_r')"><span>R multiple</span><input type="number" step="0.1" v-model.number="tradeReviewForms[card.trade_group_id].realized_r" /></label>
+              <label :title="fieldHint('primary_mistake_type')"><span>Mistake type</span><select v-model="tradeReviewForms[card.trade_group_id].primary_mistake_type"><option value="none">No mistake</option><option value="discipline">FOMO</option><option value="risk">Risk</option><option value="execution">Execution</option></select></label>
               <label :title="fieldHint('mistake_severity')"><span>Mistake severity</span><select v-model="tradeReviewForms[card.trade_group_id].mistake_severity"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></label>
               <label :title="fieldHint('rule_violation_type')"><span>Rule violation type</span><select v-model="tradeReviewForms[card.trade_group_id].rule_violation_type"><option value="none">none</option><option value="entry_rule">entry_rule</option><option value="risk_rule">risk_rule</option><option value="exit_rule">exit_rule</option><option value="size_rule">size_rule</option></select></label>
             </div>
             <div class="trade-review-text-grid">
               <label :title="fieldHint('thesis')"><span>Thesis</span><textarea v-model="tradeReviewForms[card.trade_group_id].thesis" rows="2"></textarea></label>
-              <label :title="fieldHint('what_to_improve')"><span>What to improve</span><textarea v-model="tradeReviewForms[card.trade_group_id].what_to_improve" rows="2"></textarea></label>
+              <label :title="fieldHint('next_time_rule')"><span>Next time rule</span><textarea v-model="tradeReviewForms[card.trade_group_id].what_to_improve" rows="2" placeholder="If [X happens] → I will [Y]"></textarea></label>
             </div>
 
             <div :title="fieldHint('mistake_tags')"><span>Mistake Tags</span><div class="chip-wrap">
               <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (tradeReviewForms[card.trade_group_id].mistake_tags || []).includes(tag.id) }]" @click="toggleTradeMistakeTag(card.trade_group_id, tag.id)">{{ tag.name }}</button>
             </div></div>
-
             <label :title="fieldHint('screenshots')">
               <span>Screenshots</span>
               <div class="helper-row">
@@ -157,6 +153,7 @@
       <div :title="fieldHint('daily_mistake_tags')"><span>Daily Mistake Tags</span><div class="chip-wrap">
         <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (form.mistake_tags || []).includes(tag.id) }]" @click="toggleDailyMistakeTag(tag.id)">{{ tag.name }}</button>
       </div></div>
+      <div class="muted-copy" style="margin: 6px 0 10px;">Tag 管理（新增/编辑/删除）请前往 <router-link class="inline-link" to="/settings">Settings → Mistake Tags</router-link>。</div>
       <label :title="fieldHint('daily_screenshots')">
         <span>Daily Session Screenshots</span>
         <div class="helper-row">
@@ -709,8 +706,11 @@ const FIELD_HINTS = {
   exit_q: '1-5分：出场执行质量，5=非常理想。',
   risk_q: '1-5分：风险控制质量（仓位/止损执行）。',
   followed_plan: '是否按原计划执行。',
+  plan_follow_take_again: '将 Followed plan 与 Would take again 合并后的快速判断。',
+  realized_r: '本笔交易R倍数结果（如 +1R / -0.5R）。',
   thesis: '这笔交易的核心逻辑与依据。',
   what_to_improve: '这笔交易后续可改进点。',
+  next_time_rule: '强制改进规则：If [X happens] → I will [Y]。',
   mistake_tags: '本笔交易出现的问题标签（可多选）。',
   screenshots: '上传该笔交易相关截图，用于复盘留档。',
   market_regime: '当天主要市场环境（趋势/震荡等）。',
@@ -979,12 +979,14 @@ function hydrateCardForms(cards) {
       exit_quality: review.exit_quality,
       risk_management: review.risk_management,
       followed_plan: review.followed_plan ?? null,
+      plan_follow_take_again: review.would_take_again || (review.followed_plan == null ? '' : (review.followed_plan ? 'yes' : 'no')),
       primary_mistake_type: review.primary_mistake_type || 'none',
       mistake_severity: review.mistake_severity || 'low',
       rule_violation_type: review.rule_violation_type || 'none',
       what_to_improve: review.what_to_improve || '',
       mistake_tags: review.mistake_tags || [],
       screenshots: review.screenshots || [],
+      realized_r: review.realized_r,
     }
   })
   tradeReviewForms.value = next
@@ -1145,6 +1147,11 @@ async function saveCardReview(tradeGroupId) {
   savingTrade.value = tradeGroupId
   try {
     const payload = { ...tradeReviewForms.value[tradeGroupId] }
+    if (payload.plan_follow_take_again) {
+      payload.would_take_again = payload.plan_follow_take_again
+      payload.followed_plan = payload.plan_follow_take_again === 'yes'
+    }
+    delete payload.plan_follow_take_again
     const card = (queue.value.closed_trades || []).find((item) => item.trade_group_id === tradeGroupId)
     const selectedOpt = (card?.snapshot_options || []).find((opt) => Number(opt.id) === Number(payload.selected_snapshot))
     if (selectedOpt && !isCompatibleSymbol(selectedOpt.symbol, card?.symbol)) {
@@ -1725,6 +1732,32 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   gap: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.review-head-main {
+  display: grid;
+  gap: 8px;
+}
+
+.review-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.summary-chip-row .badge {
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .trade-review-progress {

@@ -594,8 +594,9 @@ class SetupTagViewSet(viewsets.ReadOnlyModelViewSet):
         return SetupTag.objects.all().order_by('name')
 
 
-class MistakeTagViewSet(viewsets.ReadOnlyModelViewSet):
+class MistakeTagViewSet(viewsets.ModelViewSet):
     serializer_class = MistakeTagSerializer
+    queryset = MistakeTag.objects.all().order_by('name')
 
     def get_queryset(self):
         if not MistakeTag.objects.exists():
