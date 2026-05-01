@@ -99,6 +99,32 @@
       </div>
 
       <div class="card settings-card">
+        <div class="section-title">Mistake Tags</div>
+        <div class="settings-copy muted-copy">配置 Trade Review / Daily Review 中的 Mistake Tags，支持新增、编辑、删除。</div>
+        <div class="settings-form-grid strategy-settings-grid">
+          <label>
+            <span>New Mistake Tag</span>
+            <input v-model.trim="newMistakeTagName" type="text" placeholder="例如：Ignored Stop" @keyup.enter="addMistakeTag" />
+          </label>
+          <div class="settings-actions">
+            <button @click="addMistakeTag" :disabled="!newMistakeTagName || mistakeTagSaving">{{ mistakeTagSaving ? 'Saving...' : 'Add Tag' }}</button>
+          </div>
+        </div>
+        <div class="strategy-list">
+          <div v-for="item in mistakeTagOptions" :key="item.id" class="strategy-row">
+            <div class="strategy-main-group">
+              <input v-model.trim="item.name" type="text" placeholder="Mistake tag name" />
+            </div>
+            <div class="strategy-actions-fixed">
+              <button class="secondary small-btn" @click="saveMistakeTag(item)">Save</button>
+              <button class="secondary small-btn" @click="removeMistakeTag(item.id)">Delete</button>
+            </div>
+          </div>
+          <div v-if="!mistakeTagOptions.length" class="muted-copy">No mistake tags configured yet.</div>
+        </div>
+      </div>
+
+      <div class="card settings-card">
         <div class="section-title">Local Workspace</div>
         <div class="settings-copy">
           <p>下面这些仍然保存在浏览器本地：</p>
@@ -129,6 +155,7 @@ import {
   updateStrategyOption,
   deleteStrategyOption,
 } from '../api/common'
+import { createMistakeTag, deleteMistakeTag, fetchMistakeTags, updateMistakeTag } from '../api/journal'
 
 const config = ref(null)
 const tabs = ref([])
@@ -138,6 +165,9 @@ const ready = computed(() => Boolean(config.value?.token_exists && config.value?
 const strategyOptions = ref([])
 const strategySaving = ref(false)
 const newStrategyName = ref('')
+const mistakeTagOptions = ref([])
+const mistakeTagSaving = ref(false)
+const newMistakeTagName = ref('')
 
 async function loadConfigStatus() {
   try {
@@ -201,6 +231,34 @@ async function removeStrategy(id) {
   await deleteStrategyOption(id)
   await loadStrategyOptions()
 }
+
+async function loadMistakeTags() {
+  const res = await fetchMistakeTags()
+  mistakeTagOptions.value = (res.data?.results || res.data || []).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+async function addMistakeTag() {
+  if (!newMistakeTagName.value) return
+  mistakeTagSaving.value = true
+  try {
+    await createMistakeTag({ name: newMistakeTagName.value })
+    newMistakeTagName.value = ''
+    await loadMistakeTags()
+  } finally {
+    mistakeTagSaving.value = false
+  }
+}
+
+async function saveMistakeTag(item) {
+  await updateMistakeTag(item.id, { name: item.name })
+  await loadMistakeTags()
+}
+
+async function removeMistakeTag(id) {
+  if (!window.confirm('Delete this mistake tag?')) return
+  await deleteMistakeTag(id)
+  await loadMistakeTags()
+}
 function clearLocalPrefs() {
   Object.keys(localStorage)
     .filter((key) => key.startsWith('trade-dashboard-') || key.startsWith('tv-') || key.startsWith('journal-'))
@@ -212,5 +270,6 @@ onMounted(async () => {
   await loadConfigStatus()
   await loadDashboardSettings()
   await loadStrategyOptions()
+  await loadMistakeTags()
 })
 </script>
