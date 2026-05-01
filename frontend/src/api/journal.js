@@ -23,6 +23,7 @@ export const saveTradeReview = (payload) => api.post('/journal/trade-reviews/', 
 export const updateTradeReview = (id, payload) => api.patch(`/journal/trade-reviews/${id}/`, payload)
 export const fetchSetupTags = () => api.get('/journal/setup-tags/')
 export const fetchMistakeTags = () => api.get('/journal/mistake-tags/')
+export const createMistakeTag = (payload) => api.post('/journal/mistake-tags/', payload)
 
 export const fetchPositionCheckpoints = (params = {}) => api.get('/journal/position-checkpoints/', { params })
 export const savePositionCheckpoint = (payload) => api.post('/journal/position-checkpoints/', payload)

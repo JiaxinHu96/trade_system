@@ -42,8 +42,8 @@
       <div class="trade-card-grid">
         <div v-for="card in queue.closed_trades" :key="card.trade_group_id" class="journal-entry-card trade-review-card">
           <div class="trade-review-head">
-            <div>
-              <div><strong>{{ card.symbol }}</strong> <span :class="['timeline-pnl-pill', card.realized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative']">{{ card.realized_pnl }}</span> <span :class="['badge', tradeStatusClass(card.status)]">{{ card.status }}</span></div>
+            <div class="review-head-main">
+              <div class="review-title-row"><strong>{{ card.symbol }}</strong> <span :class="['timeline-pnl-pill', card.realized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative']">{{ card.realized_pnl }}</span> <span :class="['badge', tradeStatusClass(card.status)]">{{ card.status }}</span></div>
               <div class="summary-chip-row">
                 <span class="badge" :class="card.realized_pnl >= 0 ? 'badge-profit' : 'badge-loss'">R: {{ card.trade_review?.realized_r ?? '-' }}</span>
                 <span class="badge">Mistake: {{ card.mistake_tags?.[0] || 'No mistake' }}</span>
@@ -93,7 +93,7 @@
                 </select>
               </label>
               <label :title="fieldHint('grade')"><span>Grade</span><select v-model="tradeReviewForms[card.trade_group_id].final_grade"><option value="">-</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
-              <label :title="fieldHint('plan_follow_take_again')"><span>Plan follow / Take again</span><select v-model="tradeReviewForms[card.trade_group_id].plan_follow_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
+              <label :title="fieldHint('plan_follow_take_again')"><span>Plan follow</span><select v-model="tradeReviewForms[card.trade_group_id].plan_follow_take_again"><option value="">-</option><option value="yes">Yes</option><option value="no">No</option><option value="with_changes">With changes</option></select></label>
               <label :title="fieldHint('realized_r')"><span>R multiple</span><input type="number" step="0.1" v-model.number="tradeReviewForms[card.trade_group_id].realized_r" /></label>
               <label :title="fieldHint('primary_mistake_type')"><span>Mistake type</span><select v-model="tradeReviewForms[card.trade_group_id].primary_mistake_type"><option value="none">No mistake</option><option value="discipline">FOMO</option><option value="risk">Risk</option><option value="execution">Execution</option></select></label>
               <label :title="fieldHint('mistake_severity')"><span>Mistake severity</span><select v-model="tradeReviewForms[card.trade_group_id].mistake_severity"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></label>
@@ -107,6 +107,10 @@
             <div :title="fieldHint('mistake_tags')"><span>Mistake Tags</span><div class="chip-wrap">
               <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (tradeReviewForms[card.trade_group_id].mistake_tags || []).includes(tag.id) }]" @click="toggleTradeMistakeTag(card.trade_group_id, tag.id)">{{ tag.name }}</button>
             </div></div>
+            <div class="inline-add-tag">
+              <input v-model="tradeReviewForms[card.trade_group_id].custom_mistake_tag" placeholder="Custom tag (e.g. Late Exit)" />
+              <button type="button" class="secondary small-btn" @click="addCustomMistakeTag(card.trade_group_id)">Add tag</button>
+            </div>
 
             <label :title="fieldHint('screenshots')">
               <span>Screenshots</span>
@@ -587,6 +591,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import TradesVizChart from '../components/TradesVizChart.vue'
 import {
+  createMistakeTag,
   createDailyReview,
   fetchDailyReviews,
   fetchMistakeTags,
@@ -963,6 +968,16 @@ function toggleTradeMistakeTag(tradeGroupId, tagId) {
   tradeReviewForms.value[tradeGroupId].mistake_tags = Array.from(set)
 }
 
+async function addCustomMistakeTag(tradeGroupId) {
+  const name = String(tradeReviewForms.value[tradeGroupId]?.custom_mistake_tag || '').trim()
+  if (!name) return
+  const existing = (mistakeTags.value || []).find((tag) => tag.name.toLowerCase() === name.toLowerCase())
+  const tag = existing || (await createMistakeTag({ name })).data
+  if (!existing) mistakeTags.value = [...mistakeTags.value, tag].sort((a, b) => a.name.localeCompare(b.name))
+  toggleTradeMistakeTag(tradeGroupId, tag.id)
+  tradeReviewForms.value[tradeGroupId].custom_mistake_tag = ''
+}
+
 function hydrateCardForms(cards) {
   const next = {}
   cards.forEach((card) => {
@@ -987,6 +1002,7 @@ function hydrateCardForms(cards) {
       mistake_tags: review.mistake_tags || [],
       screenshots: review.screenshots || [],
       realized_r: review.realized_r,
+      custom_mistake_tag: '',
     }
   })
   tradeReviewForms.value = next
@@ -1732,6 +1748,32 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   gap: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.review-head-main {
+  display: grid;
+  gap: 8px;
+}
+
+.review-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.summary-chip-row .badge {
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .trade-review-progress {
@@ -1751,6 +1793,12 @@ onBeforeUnmount(() => {
 
 .compact-trade-body {
   padding-top: 10px;
+}
+
+.inline-add-tag {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .trade-review-form-grid {
