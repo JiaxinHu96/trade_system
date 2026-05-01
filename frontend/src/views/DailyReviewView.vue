@@ -1133,6 +1133,7 @@ async function openWorkspaceTab() {
 }
 
 async function openPretradeTab() {
+  pretradeDate.value = queueDate.value
   journalTab.value = 'pretrade'
   await loadPretrade()
   syncLabelTitleTargets()
