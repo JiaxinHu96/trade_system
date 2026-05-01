@@ -107,11 +107,6 @@
             <div :title="fieldHint('mistake_tags')"><span>Mistake Tags</span><div class="chip-wrap">
               <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (tradeReviewForms[card.trade_group_id].mistake_tags || []).includes(tag.id) }]" @click="toggleTradeMistakeTag(card.trade_group_id, tag.id)">{{ tag.name }}</button>
             </div></div>
-            <div class="inline-add-tag">
-              <input v-model="tradeReviewForms[card.trade_group_id].custom_mistake_tag" placeholder="Custom tag (e.g. Late Exit)" />
-              <button type="button" class="secondary small-btn" @click="addCustomMistakeTag(card.trade_group_id)">Add tag</button>
-            </div>
-
             <label :title="fieldHint('screenshots')">
               <span>Screenshots</span>
               <div class="helper-row">
@@ -591,7 +586,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import TradesVizChart from '../components/TradesVizChart.vue'
 import {
-  createMistakeTag,
   createDailyReview,
   fetchDailyReviews,
   fetchMistakeTags,
@@ -968,16 +962,6 @@ function toggleTradeMistakeTag(tradeGroupId, tagId) {
   tradeReviewForms.value[tradeGroupId].mistake_tags = Array.from(set)
 }
 
-async function addCustomMistakeTag(tradeGroupId) {
-  const name = String(tradeReviewForms.value[tradeGroupId]?.custom_mistake_tag || '').trim()
-  if (!name) return
-  const existing = (mistakeTags.value || []).find((tag) => tag.name.toLowerCase() === name.toLowerCase())
-  const tag = existing || (await createMistakeTag({ name })).data
-  if (!existing) mistakeTags.value = [...mistakeTags.value, tag].sort((a, b) => a.name.localeCompare(b.name))
-  toggleTradeMistakeTag(tradeGroupId, tag.id)
-  tradeReviewForms.value[tradeGroupId].custom_mistake_tag = ''
-}
-
 function hydrateCardForms(cards) {
   const next = {}
   cards.forEach((card) => {
@@ -1002,7 +986,6 @@ function hydrateCardForms(cards) {
       mistake_tags: review.mistake_tags || [],
       screenshots: review.screenshots || [],
       realized_r: review.realized_r,
-      custom_mistake_tag: '',
     }
   })
   tradeReviewForms.value = next
@@ -1793,12 +1776,6 @@ onBeforeUnmount(() => {
 
 .compact-trade-body {
   padding-top: 10px;
-}
-
-.inline-add-tag {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
 }
 
 .trade-review-form-grid {
