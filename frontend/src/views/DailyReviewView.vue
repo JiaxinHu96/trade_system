@@ -153,6 +153,7 @@
       <div :title="fieldHint('daily_mistake_tags')"><span>Daily Mistake Tags</span><div class="chip-wrap">
         <button v-for="tag in mistakeTags" :key="tag.id" type="button" :class="['trade-option-chip', { active: (form.mistake_tags || []).includes(tag.id) }]" @click="toggleDailyMistakeTag(tag.id)">{{ tag.name }}</button>
       </div></div>
+      <div class="muted-copy" style="margin: 6px 0 10px;">Tag 管理（新增/编辑/删除）请前往 <router-link class="inline-link" to="/settings">Settings → Mistake Tags</router-link>。</div>
       <label :title="fieldHint('daily_screenshots')">
         <span>Daily Session Screenshots</span>
         <div class="helper-row">
