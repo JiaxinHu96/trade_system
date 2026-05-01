@@ -11,7 +11,7 @@
     <section class="card tv-tabbed-panel tv-tabbed-panel-compact">
       <div class="tv-panel-tabs">
         <button :class="['tv-subtab', { active: journalTab === 'pretrade' }]" @click="openPretradeTab">Pre-Trade Plan</button>
-        <button :class="['tv-subtab', { active: journalTab === 'workspace' }]" @click="journalTab='workspace'">Review Workspace</button>
+        <button :class="['tv-subtab', { active: journalTab === 'workspace' }]" @click="openWorkspaceTab">Review Workspace</button>
         <button :class="['tv-subtab', { active: journalTab === 'analytics' }]" @click="openAnalyticsTab">Analytics</button>
         <button :class="['tv-subtab', { active: journalTab === 'timeline' }]" @click="openTimelineTab">Journal Timeline</button>
       </div>
@@ -1121,6 +1121,14 @@ async function toggleTimelineTrades(reviewDate) {
 async function openTimelineTab() {
   journalTab.value = 'timeline'
   if (!dailyTimeline.value.length) await loadTimeline()
+  syncLabelTitleTargets()
+}
+
+
+async function openWorkspaceTab() {
+  queueDate.value = pretradeDate.value
+  journalTab.value = 'workspace'
+  await loadQueue()
   syncLabelTitleTargets()
 }
 
