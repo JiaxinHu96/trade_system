@@ -143,8 +143,8 @@
     <section class="card workspace-secondary-card" ref="dailySectionRef">
       <div class="section-title">Daily Session Review</div>
       <div class="journal-form-grid workspace-field-grid" style="margin-bottom: 12px;">
-        <label :title="fieldHint('market_regime')"><span>Market Regime (from Pre-Trade)</span><input :value="queuePretradePlan?.market_regime || '-'" readonly /></label>
-        <label :title="fieldHint('daily_bias')"><span>Daily Bias (from Pre-Trade)</span><input :value="queuePretradePlan?.daily_bias || queuePretradePlan?.session || '-'" readonly /></label>
+        <label :title="fieldHint('market_regime')"><span>Market Regime</span><input v-model="form.market_regime" /></label>
+        <label :title="fieldHint('daily_bias')"><span>Daily Bias</span><input v-model="form.daily_bias" /></label>
         <label><span>Did market behave as expected?</span><select v-model="marketExpectedSelection"><option value="">-</option><option value="true">Yes</option><option value="false">No</option></select></label>
       </div>
 
@@ -1408,6 +1408,10 @@ async function loadQueuePretradeStatus() {
   const res = await fetchPretradePlans({ date: queueDate.value, page_size: 1 })
   const plan = (res.data?.results || res.data || [])[0]
   queuePretradePlan.value = plan || null
+  if (plan) {
+    if (!form.value.market_regime) form.value.market_regime = plan.market_regime || ''
+    if (!form.value.daily_bias) form.value.daily_bias = plan.daily_bias || plan.session || ''
+  }
   if (!plan || !plan.market_regime || !(Number(plan.risk_budget_r) > 0)) {
     queuePretradeReady.value = false
     queuePretradeMessage.value = 'Complete Pre-Trade Plan (market regime + risk budget + snapshots) before Start Review.'
