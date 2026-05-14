@@ -23,32 +23,52 @@ class IBKRClient:
                 "Please set them in backend/.env or your run configuration."
             )
 
-        send_resp = requests.get(
-            settings.IBKR_FLEX_SEND_REQUEST_URL,
-            params={"t": token, "q": query_id, "v": "3"},
-            timeout=60,
-        )
-        send_resp.raise_for_status()
-
-        reference_code = self.parse_reference_code(send_resp.text)
-        if not reference_code:
-            raise ValueError(f"Could not get Flex reference code: {send_resp.text}")
-
-        for _ in range(15):
-            get_resp = requests.get(
-                settings.IBKR_FLEX_GET_STATEMENT_URL,
-                params={"t": token, "q": reference_code, "v": "3"},
+        last_send_xml = ""
+        for send_attempt in range(3):
+            send_resp = requests.get(
+                settings.IBKR_FLEX_SEND_REQUEST_URL,
+                params={"t": token, "q": query_id, "v": "3"},
                 timeout=60,
             )
-            get_resp.raise_for_status()
+            send_resp.raise_for_status()
+            last_send_xml = send_resp.text
 
-            xml_text = get_resp.text
-            if "<FlexStatement" in xml_text and "<Trades>" in xml_text:
-                return xml_text
+            reference_code = self.parse_reference_code(last_send_xml)
+            if reference_code:
+                for _ in range(15):
+                    get_resp = requests.get(
+                        settings.IBKR_FLEX_GET_STATEMENT_URL,
+                        params={"t": token, "q": reference_code, "v": "3"},
+                        timeout=60,
+                    )
+                    get_resp.raise_for_status()
 
-            time.sleep(2)
+                    xml_text = get_resp.text
+                    if "<FlexStatement" in xml_text and "<Trades>" in xml_text:
+                        return xml_text
 
-        raise TimeoutError("Timed out waiting for Flex statement.")
+                    time.sleep(2)
+
+                raise TimeoutError("Timed out waiting for Flex statement.")
+
+            error_code, _ = self.parse_send_request_error(last_send_xml)
+            if error_code == "1001" and send_attempt < 2:
+                time.sleep(3 * (send_attempt + 1))
+                continue
+
+            raise ValueError(f"Could not get Flex reference code: {last_send_xml}")
+
+        raise ValueError(f"Could not get Flex reference code: {last_send_xml}")
+
+    def parse_send_request_error(self, xml_text: str) -> tuple[str | None, str | None]:
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return None, None
+
+        code = root.findtext(".//ErrorCode")
+        message = root.findtext(".//ErrorMessage")
+        return code, message
 
     def parse_reference_code(self, xml_text: str) -> str | None:
         try:
