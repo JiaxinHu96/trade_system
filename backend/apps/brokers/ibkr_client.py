@@ -9,6 +9,8 @@ from django.utils import timezone
 
 
 class IBKRClient:
+    SEND_RETRYABLE_ERROR_CODES = {"1001"}
+
     def fetch_all_executions(self) -> list[dict]:
         xml_text = self.fetch_flex_statement_xml()
         return self.parse_flex_xml(xml_text)
@@ -24,7 +26,7 @@ class IBKRClient:
             )
 
         last_send_xml = ""
-        max_send_attempts = 8
+        max_send_attempts = 20
         for send_attempt in range(max_send_attempts):
             send_resp = requests.get(
                 settings.IBKR_FLEX_SEND_REQUEST_URL,
@@ -36,7 +38,10 @@ class IBKRClient:
 
             reference_code = self.parse_reference_code(last_send_xml)
             if reference_code:
-                for _ in range(15):
+                wait_seconds = 0
+                max_wait_seconds = 180
+                poll_interval_seconds = 3
+                while wait_seconds < max_wait_seconds:
                     get_resp = requests.get(
                         settings.IBKR_FLEX_GET_STATEMENT_URL,
                         params={"t": token, "q": reference_code, "v": "3"},
@@ -45,30 +50,42 @@ class IBKRClient:
                     get_resp.raise_for_status()
 
                     xml_text = get_resp.text
-                    if "<FlexStatement" in xml_text and "<Trades>" in xml_text:
+                    if self._is_flex_statement_ready(xml_text):
                         return xml_text
 
-                    time.sleep(2)
+                    error_code, _ = self.parse_send_request_error(xml_text)
+                    if error_code and error_code not in self.SEND_RETRYABLE_ERROR_CODES:
+                        raise RuntimeError(f"IBKR Flex get-statement failed with ErrorCode {error_code}.")
 
-                raise TimeoutError("Timed out waiting for Flex statement.")
+                    time.sleep(poll_interval_seconds)
+                    wait_seconds += poll_interval_seconds
+
+                raise TimeoutError("Timed out waiting for Flex statement after 180 seconds.")
 
             error_code, error_message = self.parse_send_request_error(last_send_xml)
-            if error_code == "1001" and send_attempt < max_send_attempts - 1:
-                time.sleep(5)
+            if error_code in self.SEND_RETRYABLE_ERROR_CODES and send_attempt < max_send_attempts - 1:
+                time.sleep(3)
                 continue
 
-            if error_code == "1001":
+            if error_code in self.SEND_RETRYABLE_ERROR_CODES:
                 raise RuntimeError(
                     "IBKR Flex report is temporarily unavailable (ErrorCode 1001). "
-                    "Please wait 1-2 minutes and try again."
+                    "Please wait a few minutes and try again."
                 )
+
+            if error_code:
+                detail = f" ({error_message})" if error_message else ""
+                raise RuntimeError(f"IBKR Flex send-request failed with ErrorCode {error_code}{detail}.")
 
             raise ValueError(f"Could not get Flex reference code: {last_send_xml}")
 
         raise RuntimeError(
             "IBKR Flex report is temporarily unavailable (ErrorCode 1001). "
-            "Please wait 1-2 minutes and try again."
+            "Please wait a few minutes and try again."
         )
+
+    def _is_flex_statement_ready(self, xml_text: str) -> bool:
+        return "<FlexStatement" in xml_text and "<Trades" in xml_text
 
     def parse_send_request_error(self, xml_text: str) -> tuple[str | None, str | None]:
         try:
