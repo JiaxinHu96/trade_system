@@ -13,6 +13,12 @@ from .serializers import SyncJobSerializer
 
 class StartIBKRSyncAPIView(APIView):
     def post(self, request):
+        if SyncJob.objects.filter(source='ibkr', status='running').exists():
+            return Response(
+                {'error': 'A sync job is already running. Please wait for it to finish.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         job = SyncJob.objects.create(
             source='ibkr',
             job_type='full_sync',
