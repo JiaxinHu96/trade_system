@@ -114,6 +114,49 @@ def _extract_multiplier(fill) -> Decimal:
     return ONE
 
 
+
+
+def _normalize_combo_key(value):
+    if value in (None, ''):
+        return ''
+    return str(value).strip()
+
+
+def _infer_combo_key(fill):
+    raw_execution = getattr(fill, 'raw_execution', None)
+    if raw_execution is None:
+        return ''
+
+    payload = getattr(raw_execution, 'raw_payload', None) or {}
+    combo_key_candidates = [
+        payload.get('combo_id'),
+        payload.get('comboId'),
+        payload.get('spreadId'),
+        payload.get('strategyId'),
+        payload.get('orderReference'),
+        getattr(raw_execution, 'order_id', None),
+        getattr(raw_execution, 'perm_id', None),
+    ]
+    for candidate in combo_key_candidates:
+        normalized = _normalize_combo_key(candidate)
+        if normalized:
+            return normalized
+    return ''
+
+
+def _build_position_group_key(fill):
+    account = getattr(fill.raw_execution, 'account', None) if getattr(fill, 'raw_execution', None) else None
+    combo_key = _infer_combo_key(fill)
+    if combo_key:
+        return (account or '', f'combo::{combo_key}', fill.asset_class or '')
+    return (account or '', fill.symbol or '', fill.asset_class or '')
+
+
+def _display_symbol_for_bucket(fills):
+    symbols = sorted({(fill.symbol or '').strip() for fill in fills if (fill.symbol or '').strip()})
+    if len(symbols) <= 1:
+        return symbols[0] if symbols else ''
+    return 'SPREAD(' + ','.join(symbols) + ')'
 def _new_trade_bucket(fill, direction: str):
     return {
         'symbol': fill.symbol,
@@ -304,12 +347,12 @@ def rebuild_all_trade_groups():
     trade_buckets = []
     fills_by_position_key = defaultdict(list)
     for fill in fills:
-        account = getattr(fill.raw_execution, 'account', None) if getattr(fill, 'raw_execution', None) else None
-        key = (account or '', fill.symbol or '', fill.asset_class or '')
+        key = _build_position_group_key(fill)
         fills_by_position_key[key].append(fill)
 
     for (_, _symbol, _asset_class), key_fills in fills_by_position_key.items():
         current_bucket = None
+        bucket_display_symbol = _display_symbol_for_bucket(key_fills)
 
         for fill in key_fills:
             side = (fill.side or '').upper()
@@ -328,6 +371,7 @@ def rebuild_all_trade_groups():
                 if current_bucket is None:
                     direction = 'long' if side == 'BUY' else 'short'
                     current_bucket = _new_trade_bucket(fill, direction)
+                    current_bucket['symbol'] = bucket_display_symbol or fill.symbol
 
                 position_sign = _sign(current_bucket['position_qty'])
                 side_sign = 1 if side == 'BUY' else -1
