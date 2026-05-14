@@ -84,7 +84,9 @@ async function runSync() {
     result.value = res.data
     await loadJobs(1)
   } catch (err) {
-    alert(err?.response?.data?.error || 'Sync failed')
+    const serverError = err?.response?.data?.error
+    const timeoutError = err?.code === 'ECONNABORTED' ? 'Sync request timed out (3 min). Please retry.' : ''
+    alert(serverError || timeoutError || err?.message || 'Sync failed')
   } finally {
     loading.value = false
   }
