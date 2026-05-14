@@ -24,7 +24,8 @@ class IBKRClient:
             )
 
         last_send_xml = ""
-        for send_attempt in range(3):
+        max_send_attempts = 8
+        for send_attempt in range(max_send_attempts):
             send_resp = requests.get(
                 settings.IBKR_FLEX_SEND_REQUEST_URL,
                 params={"t": token, "q": query_id, "v": "3"},
@@ -51,14 +52,23 @@ class IBKRClient:
 
                 raise TimeoutError("Timed out waiting for Flex statement.")
 
-            error_code, _ = self.parse_send_request_error(last_send_xml)
-            if error_code == "1001" and send_attempt < 2:
-                time.sleep(3 * (send_attempt + 1))
+            error_code, error_message = self.parse_send_request_error(last_send_xml)
+            if error_code == "1001" and send_attempt < max_send_attempts - 1:
+                time.sleep(5)
                 continue
+
+            if error_code == "1001":
+                raise RuntimeError(
+                    "IBKR Flex report is temporarily unavailable (ErrorCode 1001). "
+                    "Please wait 1-2 minutes and try again."
+                )
 
             raise ValueError(f"Could not get Flex reference code: {last_send_xml}")
 
-        raise ValueError(f"Could not get Flex reference code: {last_send_xml}")
+        raise RuntimeError(
+            "IBKR Flex report is temporarily unavailable (ErrorCode 1001). "
+            "Please wait 1-2 minutes and try again."
+        )
 
     def parse_send_request_error(self, xml_text: str) -> tuple[str | None, str | None]:
         try:
