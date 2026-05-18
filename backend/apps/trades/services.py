@@ -128,14 +128,16 @@ def _infer_combo_key(fill):
         return ''
 
     payload = getattr(raw_execution, 'raw_payload', None) or {}
+
+    # Only use combo aggregation when execution payload explicitly marks a combo/spread.
+    # Falling back to order_id / perm_id would make every standalone order look like
+    # an isolated combo bucket and break normal open/close matching.
     combo_key_candidates = [
         payload.get('combo_id'),
         payload.get('comboId'),
         payload.get('spreadId'),
         payload.get('strategyId'),
         payload.get('orderReference'),
-        getattr(raw_execution, 'order_id', None),
-        getattr(raw_execution, 'perm_id', None),
     ]
     for candidate in combo_key_candidates:
         normalized = _normalize_combo_key(candidate)
