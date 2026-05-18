@@ -85,7 +85,10 @@ class IBKRClient:
         )
 
     def _is_flex_statement_ready(self, xml_text: str) -> bool:
-        return "<FlexStatement" in xml_text and "<Trades" in xml_text
+        # A valid Flex response may contain zero trades for the query window,
+        # so we should treat a FlexStatement payload as "ready" even when the
+        # <Trades> section is absent.
+        return "<FlexStatement" in xml_text
 
     def parse_send_request_error(self, xml_text: str) -> tuple[str | None, str | None]:
         try:
